@@ -1,0 +1,99 @@
+/* --- 操作パネルのデザイン --- */
+.zen-timer {
+    font-size: 3em;
+    font-weight: bold;
+    text-align: center;
+    margin: 20px 0;
+    font-family: monospace;
+    color: var(--interactive-accent);
+}
+
+.zen-controls {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.zen-controls button {
+    padding: 10px 20px;
+    font-size: 1.2em;
+    cursor: pointer;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 5px;
+}
+
+.zen-slider-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.zen-slider-wrapper input {
+    width: 60%;
+}
+
+/* --- 🧘 Zen Mode (CSSハック) --- */
+/* .zen-mode-active がbodyにつくと発動 */
+
+.zen-mode-active .workspace-ribbon {
+    /* 左側の細いメニューバーを消す */
+    width: 0 !important;
+    overflow: hidden;
+}
+
+.zen-mode-active .status-bar {
+    /* 右下のステータスバーを消す */
+    display: none;
+}
+
+.zen-mode-active .workspace-tab-header-container {
+    /* タブバーを少し薄くして目立たなくする（お好みでdisplay:noneでも可） */
+    opacity: 0.2;
+    transition: opacity 0.3s;
+}
+.zen-mode-active .workspace-tab-header-container:hover {
+    opacity: 1;
+}
+
+/* --- 休憩オーバーレイ --- */
+.zen-break-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.9); /* 背景を暗く */
+    background-image: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80'); /* 美しい風景 */
+    background-size: cover;
+    z-index: 9999; /* 最前面へ */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.zen-break-content {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 40px;
+    border-radius: 15px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.zen-break-content h1 {
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.zen-break-content button {
+    margin-top: 20px;
+    padding: 10px 30px;
+    font-size: 1.2em;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
