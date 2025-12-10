@@ -6,8 +6,8 @@
 <br>
 A scientifically designed focus companion for your Obsidian workspace.
 
-[![Release](https://img.shields.io/github/v/release/yourname/obsidian-zen-zone?style=flat-square&color=8A2BE2)](https://github.com/yourname/obsidian-zen-zone/releases)
-[![Downloads](https://img.shields.io/github/downloads/yourname/obsidian-zen-zone/total?style=flat-square&color=success)](https://github.com/yourname/obsidian-zen-zone/releases)
+[![Release](https://img.shields.io/github/v/release/yourname/obsidian-zen-zone?style=flat-square&color=8A2BE2)](https://github.com/chacha260/obsidian-zen-zone)
+[![Downloads](https://img.shields.io/github/downloads/yourname/obsidian-zen-zone/total?style=flat-square&color=success)](https://github.com/chacha260/obsidian-zen-zone/releases/tag/need-download)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 <p align="center">
