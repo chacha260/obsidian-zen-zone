@@ -1,8 +1,259 @@
-/*
+/* --- Base Layout --- */
+.zen-view-container {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: 100%;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.zen-header h2 {
+    text-align: center;
+    margin-bottom: 10px;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
 
-If your plugin does not need CSS, delete this file.
+/* --- Card Styling --- */
+.zen-card {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
 
-*/
+/* --- Timer Card --- */
+.zen-timer-card {
+    align-items: center;
+    justify-content: center;
+    padding: 30px 20px;
+}
+
+.zen-timer-display {
+    font-size: 4em;
+    font-weight: 800;
+    font-family: 'SF Mono', 'Roboto Mono', monospace;
+    color: var(--text-normal);
+    line-height: 1;
+    margin-bottom: 20px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- CTA Button --- */
+.zen-main-btn {
+    width: 100%;
+    min-width: 200px;
+    padding: 12px 24px;
+    font-size: 1.1em;
+    font-weight: 600;
+    border-radius: 50px;
+    border: none;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    cursor: pointer;
+    transition: transform 0.1s ease, background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.zen-main-btn:hover {
+    transform: scale(1.02);
+    background-color: var(--interactive-accent-hover);
+}
+
+.zen-main-btn:active {
+    transform: scale(0.98);
+}
+
+.zen-main-btn.is-active {
+    background-color: var(--background-modifier-error);
+    color: var(--text-on-accent);
+}
+
+/* --- Audio Card --- */
+.zen-input-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.zen-label {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    min-width: 24px;
+    display: flex;
+    align-items: center;
+}
+
+.zen-select {
+    flex-grow: 1;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+}
+
+/* --- Checkpoints Grid --- */
+.zen-checkpoints-area {
+    margin-top: 5px;
+}
+
+.zen-sub-label {
+    font-size: 0.75em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.zen-chip-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+}
+
+.zen-chip {
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.85em;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+    color: var(--text-muted);
+}
+
+.zen-chip:hover {
+    border-color: var(--interactive-accent);
+    color: var(--interactive-accent);
+    background-color: var(--background-primary-alt);
+}
+
+/* --- Slider --- */
+.zen-slider {
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--interactive-accent);
+}
+
+.zen-footer-note {
+    font-size: 0.8em;
+    color: var(--text-faint);
+    text-align: center;
+    margin-top: auto;
+}
+
+/* --- Settings GUI --- */
+.zen-setting-checkpoint-row input {
+    background: var(--background-modifier-form-field);
+    border: 1px solid var(--background-modifier-border);
+    padding: 5px 10px;
+    border-radius: 4px;
+}
+
+.zen-danger-btn {
+    color: var(--text-error) !important;
+}
+.zen-danger-btn:hover {
+    background-color: var(--background-modifier-error-hover) !important;
+    color: var(--text-on-accent) !important;
+}
+
+/* --- Zen Mode Overrides --- */
+.zen-mode-active .workspace-ribbon,
+.zen-mode-active .status-bar {
+    display: none !important;
+}
+
+.zen-mode-active .workspace-tab-header-container {
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.zen-mode-active .workspace-tab-header-container:hover {
+    opacity: 1;
+}
+
+/* --- Break Overlay --- */
+.zen-break-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(5px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.5s ease;
+}
+
+.zen-break-content {
+    background: var(--background-primary);
+    padding: 40px 60px;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    border: 1px solid var(--interactive-accent);
+}
+
+.zen-break-content h1 {
+    color: var(--interactive-accent);
+    margin-bottom: 10px;
+}
+
+.zen-break-content button {
+    margin-top: 25px;
+    padding: 10px 30px;
+    font-size: 1em;
+    background-color: var(--interactive-normal);
+    color: var(--text-normal);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* --- Audio Control Row --- */
+.zen-music-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0; /* 潰れないようにする */
+}
+
+.zen-music-btn:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.zen-music-btn.is-playing {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 8px var(--interactive-accent); /* 光っている演出 */
+}
+
+/* Volume wrapper tweaks */
+.zen-volume-wrapper .zen-slider {
+    height: 4px; /* スリムに */
+}
