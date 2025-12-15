@@ -1,6 +1,15 @@
-import { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, App, Setting, setIcon, Modal, ButtonComponent } from 'obsidian';
+import { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, App, Setting, setIcon, Modal, ButtonComponent, DropdownComponent } from 'obsidian';
 
 const VIEW_TYPE_ZEN = "zen-zone-view";
+
+// ------------------------------------------------------------
+// 0. Constants & Constraints
+// ------------------------------------------------------------
+const TIME_CONSTRAINTS = {
+    work: { min: 15, max: 30, default: 25 },
+    shortBreak: { min: 3, max: 10, default: 5 },
+    longBreak: { min: 15, max: 30, default: 30 }
+};
 
 // ------------------------------------------------------------
 // 1. Data Interfaces
@@ -16,8 +25,21 @@ interface PlaylistItem {
     checkpoints?: Checkpoint[];
 }
 
+// 音楽設定用の参照型
+interface MusicReference {
+    trackIndex: number;
+    checkpointIndex: number; // -1 の場合は最初から
+}
+
 interface ZenZoneSettings {
     playlistData: PlaylistItem[];
+    // Time Settings (minutes)
+    workDuration: number;
+    shortBreakDuration: number;
+    longBreakDuration: number;
+    // Music Preferences
+    workMusic: MusicReference;
+    breakMusic: MusicReference;
 }
 
 const DEFAULT_SETTINGS: ZenZoneSettings = {
@@ -35,7 +57,19 @@ const DEFAULT_SETTINGS: ZenZoneSettings = {
                 { label: "🌃 Night", time: "10:30" }
             ]
         }
-    ]
+    ],
+    workDuration: TIME_CONSTRAINTS.work.default,
+    shortBreakDuration: TIME_CONSTRAINTS.shortBreak.default,
+    longBreakDuration: TIME_CONSTRAINTS.longBreak.default,
+    workMusic: { trackIndex: 0, checkpointIndex: -1 },
+    breakMusic: { trackIndex: 1, checkpointIndex: -1 }
+}
+
+enum TimerState {
+    Idle,
+    Focus,      // 作業中
+    ShortBreak, // 短い休憩
+    LongBreak   // 長い休憩
 }
 
 // ------------------------------------------------------------
@@ -73,27 +107,33 @@ class YouTubeAudio {
 }
 
 // ------------------------------------------------------------
-// 3. Main View (UX Optimized: Decoupled Control)
+// 3. Main View
 // ------------------------------------------------------------
 class ZenView extends ItemView {
     plugin: ZenZonePlugin;
     timerInterval: number | null = null;
-    timeLeft: number = 25 * 60; 
+    timeLeft: number = 0;
     
-    // State separation
-    isTimerRunning: boolean = false;
+    // State
+    currentState: TimerState = TimerState.Idle;
+    cycleCount: number = 0; // 0 to 3 (4 cycles)
     isMusicPlaying: boolean = false; 
 
     ytPlayer: YouTubeAudio | null = null;
     currentVideoId: string | null = null;
     currentVolume: number = 0.5;
 
-    // UI Elements for updates
+    // UI Elements
     musicBtnEl: HTMLButtonElement | null = null;
+    timerDisplayEl: HTMLElement | null = null;
+    statusLabelEl: HTMLElement | null = null;
+    cycleIndicatorEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZenZonePlugin) {
         super(leaf);
         this.plugin = plugin;
+        // 初期時間は設定から読み込む
+        this.timeLeft = this.plugin.settings.workDuration * 60;
     }
 
     getViewType() { return VIEW_TYPE_ZEN; }
@@ -105,19 +145,14 @@ class ZenView extends ItemView {
         container.empty();
         container.addClass("zen-view-container");
 
-        // Header
         const header = container.createDiv({ cls: "zen-header" });
         header.createEl("h2", { text: "Zen Zone" });
         
-        // 1. Timer Card (Focus Control)
         this.renderTimerCard(container);
-
-        // 2. Audio Card (Environment Control)
         this.renderAudioCard(container);
 
-        // Footer Note
         container.createDiv({
-            text: "Settings available in plugin options.",
+            text: "Cycle & Music settings in plugin options.",
             cls: "zen-footer-note"
         });
     }
@@ -125,32 +160,54 @@ class ZenView extends ItemView {
     renderTimerCard(parent: HTMLElement) {
         const card = parent.createDiv({ cls: "zen-card zen-timer-card" });
         
-        // Timer Display
-        const timerDisplay = card.createDiv({ cls: "zen-timer-display" });
-        timerDisplay.setText(this.formatTime(this.timeLeft));
+        // Status & Cycle info
+        const metaRow = card.createDiv({ cls: "zen-timer-meta" });
+        this.statusLabelEl = metaRow.createDiv({ cls: "zen-status-label", text: "Ready" });
+        this.cycleIndicatorEl = metaRow.createDiv({ cls: "zen-cycle-indicator", text: "Cycle: 0/4" });
 
-        // Primary Action Button (Timer Only)
+        // Timer Display
+        this.timerDisplayEl = card.createDiv({ cls: "zen-timer-display" });
+        this.timerDisplayEl.setText(this.formatTime(this.timeLeft));
+
+        // Controls
         const controls = card.createDiv({ cls: "zen-controls" });
+        
+        // UI改善: 誤クリック防止のため距離を離す (Flexbox)
+        controls.style.display = "flex";
+        controls.style.justifyContent = "space-between";
+        controls.style.alignItems = "center";
+        controls.style.width = "100%";
+        controls.style.marginTop = "5px";
+
         const toggleBtn = controls.createEl("button", { cls: "zen-main-btn" });
         toggleBtn.setText("Start Focus");
-        setIcon(toggleBtn, "timer"); // Icon changed to represent Timer/Focus
+        setIcon(toggleBtn, "timer");
+        toggleBtn.onclick = () => this.toggleTimer(toggleBtn);
         
-        toggleBtn.onclick = () => this.toggleTimer(toggleBtn, timerDisplay);
+        // Reset Button
+        const resetBtn = controls.createEl("button", { cls: "zen-sub-btn", text: "Reset" });
+        
+        // UI改善: リセットボタンに色をつけて目立たせる
+        resetBtn.style.backgroundColor = "var(--interactive-accent-hover)"; // 必要に応じて具体的な色コードに変更 (#e74c3c など)
+        resetBtn.style.color = "var(--text-on-accent)";
+        resetBtn.style.border = "1px solid var(--background-modifier-border)";
+        // 注意色にする場合
+        resetBtn.style.backgroundColor = "#c0392b"; 
+        resetBtn.style.color = "white";
+
+        resetBtn.onclick = () => this.resetSystem(toggleBtn);
     }
 
     renderAudioCard(parent: HTMLElement) {
         const card = parent.createDiv({ cls: "zen-card zen-audio-card" });
         const playlist = this.plugin.settings.playlistData;
-
-        // Hidden Player Container
         const playerContainer = card.createDiv({ cls: "zen-player-hidden" });
 
         // --- Track Selection ---
         const selectWrapper = card.createDiv({ cls: "zen-input-group" });
-        selectWrapper.createDiv({ cls: "zen-label", text: "Ambience" });
+        selectWrapper.createDiv({ cls: "zen-label", text: "Manual Select" });
         
         const selectEl = selectWrapper.createEl("select", { cls: "zen-select" });
-        
         let firstValidId: string | null = null;
         let currentTrackCheckpoints: Checkpoint[] = [];
 
@@ -159,7 +216,6 @@ class ZenView extends ItemView {
             if (videoId) {
                 const option = selectEl.createEl("option", { text: track.title });
                 option.value = JSON.stringify({ id: videoId, index: index });
-                
                 if (!firstValidId) {
                     firstValidId = videoId;
                     currentTrackCheckpoints = track.checkpoints || [];
@@ -167,51 +223,17 @@ class ZenView extends ItemView {
             }
         });
 
-        // --- Player Controls (Play/Pause & Volume) ---
-        // <Common Region>: Grouping playback controls
-        const controlsRow = card.createDiv({ cls: "zen-audio-controls-row" });
-        controlsRow.style.display = "flex";
-        controlsRow.style.alignItems = "center";
-        controlsRow.style.gap = "15px";
-        controlsRow.style.marginTop = "10px";
-
-        // Play/Pause Button
-        this.musicBtnEl = controlsRow.createEl("button", { cls: "zen-music-btn" });
-        setIcon(this.musicBtnEl, "play");
-        this.musicBtnEl.onclick = () => this.toggleMusic();
-
-        // Volume Slider
-        const volumeWrapper = controlsRow.createDiv({ cls: "zen-volume-wrapper" });
-        volumeWrapper.style.flexGrow = "1";
-        volumeWrapper.style.display = "flex";
-        volumeWrapper.style.alignItems = "center";
-        volumeWrapper.style.gap = "8px";
-
-        const volIcon = volumeWrapper.createDiv({ cls: "zen-label" });
-        setIcon(volIcon, "volume-2");
-
-        this.createSlider(volumeWrapper, (val) => {
-            this.currentVolume = val;
-            if (this.ytPlayer) this.ytPlayer.setVolume(val);
-        });
-
-        // --- Checkpoints Area ---
+        // --- Checkpoints Container (Reference for re-rendering) ---
         const checkpointsContainer = card.createDiv({ cls: "zen-checkpoints-area" });
 
-        // Player Logic
+        // --- Player Init Logic ---
         const initPlayer = (videoId: string, checkpoints: Checkpoint[]) => {
             this.currentVideoId = videoId;
-            // Re-create player
             this.ytPlayer = new YouTubeAudio(playerContainer, videoId);
             this.ytPlayer.setVolume(this.currentVolume);
-            
-            // Checkpoints render
             this.renderCheckpoints(checkpointsContainer, checkpoints);
 
-            // Music State Handling
-            // 曲変更時：再生中ならそのまま再生、停止中なら停止のまま
             if (this.isMusicPlaying) {
-                // Iframeのロード時間を考慮して少し待つ
                 setTimeout(() => {
                     if(this.ytPlayer) {
                         this.ytPlayer.setVolume(this.currentVolume);
@@ -230,35 +252,233 @@ class ZenView extends ItemView {
                 initPlayer(val.id, track.checkpoints || []);
             } catch(e) { console.error(e); }
         };
+
+        // --- Playback Controls ---
+        const controlsRow = card.createDiv({ cls: "zen-audio-controls-row" });
+        controlsRow.style.display = "flex";
+        controlsRow.style.alignItems = "center";
+        controlsRow.style.gap = "10px";
+        controlsRow.style.marginTop = "5px";
+
+        this.musicBtnEl = controlsRow.createEl("button", { cls: "zen-music-btn" });
+        setIcon(this.musicBtnEl, "play");
+        this.musicBtnEl.onclick = () => this.toggleMusic();
+
+        const volumeWrapper = controlsRow.createDiv({ cls: "zen-volume-wrapper" });
+        volumeWrapper.style.flexGrow = "1";
+        volumeWrapper.style.display = "flex";
+        volumeWrapper.style.alignItems = "center";
+        volumeWrapper.style.gap = "8px";
+        const volIcon = volumeWrapper.createDiv({ cls: "zen-label" });
+        setIcon(volIcon, "volume-2");
+
+        this.createSlider(volumeWrapper, (val) => {
+            this.currentVolume = val;
+            if (this.ytPlayer) this.ytPlayer.setVolume(val);
+        });
+
+        // Expose initPlayer for other methods to use
+        this.loadTrackByReference = (ref: MusicReference) => {
+            const track = playlist[ref.trackIndex];
+            if(!track) return;
+            const videoId = this.extractVideoId(track.url);
+            if(videoId) {
+                // UI上のSelect要素も合わせる（見た目の同期）
+                selectEl.value = JSON.stringify({ id: videoId, index: ref.trackIndex });
+                initPlayer(videoId, track.checkpoints || []);
+                
+                // チェックポイント指定があればシーク
+                if (ref.checkpointIndex >= 0 && track.checkpoints && track.checkpoints[ref.checkpointIndex]) {
+                    const timeStr = track.checkpoints[ref.checkpointIndex].time;
+                    const sec = this.parseTimeString(timeStr);
+                    // Playerのロード時間を少し待つ必要がある
+                    setTimeout(() => {
+                        this.ytPlayer?.seekTo(sec);
+                        new Notice(`🎵 Loaded: ${track.title} (${track.checkpoints![ref.checkpointIndex].label})`);
+                    }, 1500); 
+                } else {
+                    new Notice(`🎵 Loaded: ${track.title}`);
+                }
+            }
+        };
     }
+    
+    // 外部からPlayerを操作するためのプレースホルダ関数（renderAudioCard内で実装される）
+    loadTrackByReference: (ref: MusicReference) => void = () => {};
 
     renderCheckpoints(container: HTMLElement, checkpoints: Checkpoint[]) {
         container.empty();
         if(!checkpoints || checkpoints.length === 0) return;
-
         container.createDiv({ cls: "zen-sub-label", text: "Quick Jump" });
         const grid = container.createDiv({ cls: "zen-chip-grid" });
-
         checkpoints.forEach(cp => {
             const btn = grid.createEl("button", { cls: "zen-chip" });
             btn.setText(cp.label);
-            
             btn.onclick = () => {
                 const seconds = this.parseTimeString(cp.time);
                 if (this.ytPlayer) {
                     this.ytPlayer.seekTo(seconds);
                     new Notice(`⏩ Jumped to ${cp.label}`);
-                    // ジャンプしたら自動再生する方がUXが良い（意図が明確なため）
                     if (!this.isMusicPlaying) this.toggleMusic(); 
                 }
             };
         });
     }
 
-    // --- Logic: Music Control ---
+    // --- Core Logic: Timer & Cycle ---
+
+    toggleTimer(btn: HTMLButtonElement) {
+        if (this.currentState !== TimerState.Idle) {
+            // STOP/PAUSE
+            this.stopTimer();
+            this.currentState = TimerState.Idle;
+            btn.setText("Resume Focus");
+            btn.removeClass("is-active");
+            setIcon(btn, "timer");
+            this.plugin.exitZenMode();
+            this.updateStatusDisplay();
+        } else {
+            // START
+            // サイクル開始時でなければ再開、0なら初期スタート
+            if (this.cycleCount === 0 && this.timeLeft === this.plugin.settings.workDuration * 60) {
+                 this.startCycle(TimerState.Focus);
+            } else {
+                 this.runTimer(); // Resume
+            }
+            
+            this.currentState = (this.timeLeft === this.plugin.settings.workDuration * 60) ? TimerState.Focus : this.currentState;
+            if(this.currentState === TimerState.Idle) this.currentState = TimerState.Focus; // Default Fallback
+
+            btn.setText("Stop Focus");
+            btn.addClass("is-active");
+            setIcon(btn, "x");
+            this.plugin.enterZenMode();
+            
+            // 最初のスタート時、設定された音楽を再生
+            if (!this.isMusicPlaying) {
+                this.playSceneMusic(this.currentState);
+                this.toggleMusic(); // Play
+            }
+        }
+    }
+
+    resetSystem(btn: HTMLButtonElement) {
+        this.stopTimer();
+        this.currentState = TimerState.Idle;
+        this.cycleCount = 0;
+        this.timeLeft = this.plugin.settings.workDuration * 60;
+        
+        if (this.timerDisplayEl) this.timerDisplayEl.setText(this.formatTime(this.timeLeft));
+        this.updateStatusDisplay();
+        
+        btn.setText("Start Focus");
+        btn.removeClass("is-active");
+        setIcon(btn, "timer");
+        this.plugin.exitZenMode();
+    }
+
+    startCycle(state: TimerState) {
+        this.currentState = state;
+        
+        // 時間設定
+        if (state === TimerState.Focus) {
+            this.timeLeft = this.plugin.settings.workDuration * 60;
+            // Focus開始時に音楽切り替え
+            this.playSceneMusic(TimerState.Focus);
+        } else if (state === TimerState.ShortBreak) {
+            this.timeLeft = this.plugin.settings.shortBreakDuration * 60;
+            // Break開始時に音楽切り替え
+            this.playSceneMusic(TimerState.ShortBreak);
+        } else if (state === TimerState.LongBreak) {
+            this.timeLeft = this.plugin.settings.longBreakDuration * 60;
+            // Break開始時に音楽切り替え
+            this.playSceneMusic(TimerState.LongBreak);
+        }
+        
+        this.updateStatusDisplay();
+        this.runTimer();
+    }
+
+    runTimer() {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        
+        this.timerInterval = window.setInterval(() => {
+            this.timeLeft--;
+            if (this.timerDisplayEl) this.timerDisplayEl.setText(this.formatTime(this.timeLeft));
+            
+            if (this.timeLeft <= 0) {
+                this.handlePhaseComplete();
+            }
+        }, 1000);
+    }
+
+    stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+    }
+
+    handlePhaseComplete() {
+        this.stopTimer();
+        
+        // Cycle Logic
+        if (this.currentState === TimerState.Focus) {
+            // 作業終了 -> 休憩へ
+            this.cycleCount++;
+            new Notice(`👏 Cycle ${this.cycleCount} Complete!`);
+            
+            if (this.cycleCount >= 4) {
+                // 4回終わったら長い休憩
+                this.startCycle(TimerState.LongBreak);
+            } else {
+                // それ以外は短い休憩
+                this.startCycle(TimerState.ShortBreak);
+            }
+        } else if (this.currentState === TimerState.ShortBreak) {
+            // 短休憩終了 -> 作業へ
+            new Notice("🔔 Break is over. Back to Focus.");
+            this.startCycle(TimerState.Focus);
+        } else if (this.currentState === TimerState.LongBreak) {
+            // 長休憩終了 -> 全セット完了
+            this.plugin.showBreakOverlay();
+            this.resetSystem(this.containerEl.querySelector(".zen-main-btn") as HTMLButtonElement);
+            new Notice("🎉 All Cycles Complete!");
+        }
+    }
+
+    playSceneMusic(state: TimerState) {
+        // 現在の設定を取得
+        let musicRef: MusicReference | null = null;
+        if (state === TimerState.Focus) {
+            musicRef = this.plugin.settings.workMusic;
+        } else {
+            musicRef = this.plugin.settings.breakMusic;
+        }
+
+        if (musicRef) {
+            this.loadTrackByReference(musicRef);
+        }
+    }
+
+    updateStatusDisplay() {
+        if (!this.statusLabelEl || !this.cycleIndicatorEl) return;
+        
+        let label = "Ready";
+        if (this.currentState === TimerState.Focus) label = "🔥 FOCUS";
+        else if (this.currentState === TimerState.ShortBreak) label = "☕ Break (Short)";
+        else if (this.currentState === TimerState.LongBreak) label = "🌴 Break (Long)";
+        
+        this.statusLabelEl.setText(label);
+        
+        // 4サイクル中の何回目かを表示。休憩中もサイクル数は維持または次への準備
+        const displayCycle = this.cycleCount < 4 ? this.cycleCount + 1 : 4;
+        this.cycleIndicatorEl.setText(`Cycle: ${this.currentState === TimerState.Idle ? 0 : displayCycle}/4`);
+    }
+
+    // --- Music Control ---
     toggleMusic() {
         if (!this.ytPlayer) return;
-
         if (this.isMusicPlaying) {
             this.ytPlayer.pause();
             this.isMusicPlaying = false;
@@ -274,59 +494,6 @@ class ZenView extends ItemView {
                 this.musicBtnEl.addClass("is-playing");
             }
         }
-    }
-
-    // --- Logic: Timer Control (Decoupled) ---
-    toggleTimer(btn: HTMLButtonElement, display: HTMLElement) {
-        if (this.isTimerRunning) {
-            // STOP FOCUS
-            this.stopTimer();
-            btn.setText("Start Focus");
-            btn.removeClass("is-active");
-            setIcon(btn, "timer");
-            this.plugin.exitZenMode();
-            // Note: Music continues playing (Decoupled)
-        } else {
-            // START FOCUS
-            this.isTimerRunning = true;
-            btn.setText("Stop Focus");
-            btn.addClass("is-active");
-            setIcon(btn, "x"); // 'x' icon for stopping
-            this.plugin.enterZenMode();
-            // Note: Music is NOT triggered here
-            
-            this.timerInterval = window.setInterval(() => {
-                this.timeLeft--;
-                display.setText(this.formatTime(this.timeLeft));
-                if (this.timeLeft <= 0) this.completeSession(btn);
-            }, 1000);
-        }
-    }
-
-    stopTimer() {
-        this.isTimerRunning = false;
-        if (this.timerInterval) {
-            clearInterval(this.timerInterval);
-            this.timerInterval = null;
-        }
-    }
-
-    completeSession(btn: HTMLButtonElement) {
-        this.stopTimer();
-        this.plugin.exitZenMode();
-        
-        // Timer Reset
-        btn.setText("Start Focus");
-        btn.removeClass("is-active");
-        setIcon(btn, "timer");
-        this.timeLeft = 25 * 60;
-        
-        this.plugin.showBreakOverlay();
-
-        // Optional: Pause music on session complete?
-        // ユーザーの達成感を演出するために、セッション完了時は音楽を止める（静寂に戻す）のが一般的ですが
-        // ここでは「完全な分離」を優先し、音楽はそのままにします。
-        // もし止めたければここで this.toggleMusic() を呼びます。
     }
 
     // --- Helpers ---
@@ -362,13 +529,12 @@ class ZenView extends ItemView {
     }
 
     async onClose() { 
-        // Close時はさすがに止める
         if(this.ytPlayer) this.ytPlayer.pause(); 
     }
 }
 
 // ------------------------------------------------------------
-// 4. Settings GUI (Modal & Tab)
+// 4. Settings GUI
 // ------------------------------------------------------------
 
 // A. Track Editor Modal
@@ -387,108 +553,251 @@ class TrackEditorModal extends Modal {
         contentEl.empty();
         contentEl.createEl("h2", { text: this.track.title ? "Edit Track" : "New Track" });
 
-        // Basic Info
-        new Setting(contentEl)
-            .setName("Title")
-            .setDesc("Display name for the track")
-            .addText(text => text.setValue(this.track.title).onChange(value => this.track.title = value));
+        new Setting(contentEl).setName("Title").addText(text => text.setValue(this.track.title).onChange(value => this.track.title = value));
+        new Setting(contentEl).setName("URL").addText(text => text.setValue(this.track.url).onChange(value => this.track.url = value));
 
-        new Setting(contentEl)
-            .setName("URL")
-            .setDesc("YouTube URL")
-            .addText(text => text.setValue(this.track.url).onChange(value => this.track.url = value));
-
-        // Checkpoints
         contentEl.createEl("h3", { text: "Checkpoints" });
         const checkpointsContainer = contentEl.createDiv();
         this.renderCheckpoints(checkpointsContainer);
 
-        // Buttons
         const footer = contentEl.createDiv({ cls: "modal-button-container" });
         new ButtonComponent(footer).setButtonText("Cancel").onClick(() => this.close());
         new ButtonComponent(footer).setButtonText("Save").setCta().onClick(() => {
-            if(!this.track.title || !this.track.url) {
-                new Notice("Title and URL are required.");
-                return;
-            }
+            if(!this.track.title || !this.track.url) { new Notice("Required fields missing"); return; }
             this.onSubmit(this.track);
             this.close();
         });
     }
 
-renderCheckpoints(container: HTMLElement) {
+    renderCheckpoints(container: HTMLElement) {
         container.empty();
         if (this.track.checkpoints && this.track.checkpoints.length > 0) {
             this.track.checkpoints.forEach((cp, index) => {
                 const row = container.createDiv({ cls: "zen-setting-checkpoint-row" });
-                row.style.display = "flex";
-                row.style.gap = "10px";
-                row.style.marginBottom = "10px";
-                row.style.alignItems = "center";
-
+                row.style.display = "flex"; row.style.gap = "10px"; row.style.marginBottom = "10px";
+                
                 const labelInput = row.createEl("input", { type: "text", value: cp.label, placeholder: "Label" });
-                labelInput.style.flex = "2";
                 labelInput.onchange = (e: any) => cp.label = e.target.value;
-
-                const timeInput = row.createEl("input", { type: "text", value: cp.time, placeholder: "Time (e.g. 3:20)" });
-                timeInput.style.flex = "1";
+                const timeInput = row.createEl("input", { type: "text", value: cp.time, placeholder: "Time" });
                 timeInput.onchange = (e: any) => cp.time = e.target.value;
-
+                
                 const delBtn = row.createEl("button");
                 setIcon(delBtn, "trash");
-                delBtn.onclick = () => {
-                    this.track.checkpoints?.splice(index, 1);
-                    this.renderCheckpoints(container);
-                };
+                delBtn.onclick = () => { this.track.checkpoints?.splice(index, 1); this.renderCheckpoints(container); };
             });
-        } else {
-            // 【修正箇所】styleプロパティをオブジェクト内から除外
-            const msg = container.createDiv({ text: "No checkpoints added yet." });
-            msg.style.color = "var(--text-muted)";
-            msg.style.marginBottom = "10px";
         }
-        
-        const addBtn = new ButtonComponent(container).setButtonText("+ Add Checkpoint").onClick(() => {
+        new ButtonComponent(container).setButtonText("+ Add Checkpoint").onClick(() => {
             if (!this.track.checkpoints) this.track.checkpoints = [];
             this.track.checkpoints.push({ label: "", time: "" });
             this.renderCheckpoints(container);
         });
-        addBtn.buttonEl.style.width = "100%";
     }
-
     onClose() { this.contentEl.empty(); }
 }
 
-// B. Main Settings Tab
+// B. Main Settings Tab (Enhanced)
 class ZenZoneSettingTab extends PluginSettingTab {
     plugin: ZenZonePlugin;
-    constructor(app: App, plugin: ZenZonePlugin) { super(app, plugin); this.plugin = plugin; }
+    
+    // 一時的な値を保持する変数（反映ボタンを押すまで保存しない）
+    tempSettings: {
+        work: number,
+        short: number,
+        long: number
+    };
+
+    constructor(app: App, plugin: ZenZonePlugin) { 
+        super(app, plugin); 
+        this.plugin = plugin; 
+        this.resetTempSettings();
+    }
+
+    resetTempSettings() {
+        this.tempSettings = {
+            work: this.plugin.settings.workDuration,
+            short: this.plugin.settings.shortBreakDuration,
+            long: this.plugin.settings.longBreakDuration
+        };
+    }
 
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
         containerEl.createEl('h2', { text: 'Zen Zone Settings' });
         
+        // --- 1. Timer Settings (Enhanced with Sliders + Input + Validation) ---
+        containerEl.createEl('h3', { text: '⏱ Timer Configuration' });
+        
+        // Work Duration
+        this.createTimeSetting(
+            containerEl, 
+            "作業時間 (Focus)", 
+            `基本: ${TIME_CONSTRAINTS.work.default}分 | 範囲: ${TIME_CONSTRAINTS.work.min} - ${TIME_CONSTRAINTS.work.max}分`,
+            TIME_CONSTRAINTS.work,
+            'work'
+        );
+
+        // Short Break
+        this.createTimeSetting(
+            containerEl, 
+            "小休憩 (Short Break)", 
+            `基本: ${TIME_CONSTRAINTS.shortBreak.default}分 | 範囲: ${TIME_CONSTRAINTS.shortBreak.min} - ${TIME_CONSTRAINTS.shortBreak.max}分`,
+            TIME_CONSTRAINTS.shortBreak,
+            'short'
+        );
+
+        // Long Break
+        this.createTimeSetting(
+            containerEl, 
+            "大休憩 (Long Break)", 
+            `基本: ${TIME_CONSTRAINTS.longBreak.default}分 | 範囲: ${TIME_CONSTRAINTS.longBreak.min} - ${TIME_CONSTRAINTS.longBreak.max}分`,
+            TIME_CONSTRAINTS.longBreak,
+            'long'
+        );
+
+        // --- Apply Button for Time Settings ---
+        const btnContainer = containerEl.createDiv({ cls: "zen-setting-apply-container" });
+        btnContainer.style.marginTop = "20px";
+        btnContainer.style.marginBottom = "30px";
+        btnContainer.style.textAlign = "right";
+
+        new ButtonComponent(btnContainer)
+            .setButtonText("設定を保存・反映")
+            .setCta() // Call to Action color
+            .onClick(async () => {
+                this.saveTimeSettings();
+            });
+
+
+        // --- 2. Music Automation Settings ---
+        containerEl.createEl('h3', { text: '🎵 Scene Music' });
+        containerEl.createDiv({ text: "Automatically switch music when phase changes.", cls: "setting-item-description" });
+
+        this.addMusicSetting(containerEl, "Work Music", "Music to play during Focus", this.plugin.settings.workMusic);
+        this.addMusicSetting(containerEl, "Break Music", "Music to play during Break", this.plugin.settings.breakMusic);
+
+        // --- 3. Playlist Manager ---
         containerEl.createEl('h3', { text: 'Playlist Manager' });
         const listContainer = containerEl.createDiv();
         this.renderTrackList(listContainer);
-
+        
         const addContainer = containerEl.createDiv({ cls: "zen-setting-add-container" });
         addContainer.style.marginTop = "20px";
-        
-        new ButtonComponent(addContainer)
-            .setButtonText("Add New Track")
-            .setCta()
-            .onClick(() => {
-                new TrackEditorModal(this.app, null, async (newTrack) => {
-                    this.plugin.settings.playlistData.push(newTrack);
-                    await this.plugin.saveSettings();
-                    this.display();
-                }).open();
-            });
+        new ButtonComponent(addContainer).setButtonText("Add New Track").setCta().onClick(() => {
+            new TrackEditorModal(this.app, null, async (newTrack) => {
+                this.plugin.settings.playlistData.push(newTrack);
+                await this.plugin.saveSettings();
+                this.display();
+            }).open();
+        });
     }
 
-renderTrackList(container: HTMLElement) {
+    // Helper to create sync slider + input
+    createTimeSetting(container: HTMLElement, name: string, desc: string, limits: {min: number, max: number}, key: 'work'|'short'|'long') {
+        const setting = new Setting(container)
+            .setName(name)
+            .setDesc(desc);
+
+        // 1. Slider
+        setting.addSlider(slider => {
+            slider.setLimits(limits.min, limits.max, 1);
+            slider.setValue(this.tempSettings[key]);
+            slider.setDynamicTooltip();
+            slider.onChange(val => {
+                this.tempSettings[key] = val;
+                // テキストボックスも更新 (DOM操作で簡易的に同期)
+                const inputEl = setting.controlEl.querySelector(`input[type="number"]`) as HTMLInputElement;
+                if(inputEl) inputEl.value = val.toString();
+            });
+        });
+
+        // 2. Number Input (addTextを使い、属性をnumberにする)
+        setting.addText(text => {
+            text.inputEl.type = "number";
+            text.inputEl.style.width = "60px";
+            text.setValue(this.tempSettings[key].toString());
+            text.onChange(val => {
+                const num = parseInt(val);
+                if (!isNaN(num)) {
+                    this.tempSettings[key] = num;
+                    // スライダーも更新
+                    const sliderEl = setting.controlEl.querySelector(`input[type="range"]`) as HTMLInputElement;
+                    if(sliderEl) sliderEl.value = num.toString();
+                }
+            });
+        });
+    }
+
+    async saveTimeSettings() {
+        // バリデーションとクランプ処理
+        const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+
+        // Work
+        const wLimit = TIME_CONSTRAINTS.work;
+        const newWork = clamp(this.tempSettings.work, wLimit.min, wLimit.max);
+
+        // Short
+        const sLimit = TIME_CONSTRAINTS.shortBreak;
+        const newShort = clamp(this.tempSettings.short, sLimit.min, sLimit.max);
+
+        // Long
+        const lLimit = TIME_CONSTRAINTS.longBreak;
+        const newLong = clamp(this.tempSettings.long, lLimit.min, lLimit.max);
+
+        // 設定の保存
+        this.plugin.settings.workDuration = newWork;
+        this.plugin.settings.shortBreakDuration = newShort;
+        this.plugin.settings.longBreakDuration = newLong;
+        
+        await this.plugin.saveSettings();
+        
+        // Temp変数を保存された値で更新
+        this.resetTempSettings();
+
+        // UIリフレッシュ (自動補正された値を表示するため)
+        this.display();
+        
+        new Notice("Time settings saved and applied! (Values clamped to limits)");
+    }
+
+    addMusicSetting(container: HTMLElement, name: string, desc: string, targetRef: MusicReference) {
+        const setting = new Setting(container)
+            .setName(name)
+            .setDesc(desc);
+
+        // Track Selector
+        setting.addDropdown(dropdown => {
+            this.plugin.settings.playlistData.forEach((track, idx) => {
+                dropdown.addOption(idx.toString(), track.title);
+            });
+            dropdown.setValue(targetRef.trackIndex.toString());
+            dropdown.onChange(async (val) => {
+                targetRef.trackIndex = parseInt(val);
+                // トラックが変わったらチェックポイントはリセット
+                targetRef.checkpointIndex = -1; 
+                await this.plugin.saveSettings();
+                this.display(); // チェックポイントのDropdownを更新するためにリロード
+            });
+        });
+
+        // Checkpoint Selector (Optional)
+        setting.addDropdown(dropdown => {
+            dropdown.addOption("-1", "Start from beginning");
+            const selectedTrack = this.plugin.settings.playlistData[targetRef.trackIndex];
+            if (selectedTrack && selectedTrack.checkpoints) {
+                selectedTrack.checkpoints.forEach((cp, idx) => {
+                    dropdown.addOption(idx.toString(), `${cp.label} (${cp.time})`);
+                });
+            }
+            dropdown.setValue(targetRef.checkpointIndex.toString());
+            dropdown.onChange(async (val) => {
+                targetRef.checkpointIndex = parseInt(val);
+                await this.plugin.saveSettings();
+            });
+        });
+    }
+
+    renderTrackList(container: HTMLElement) {
         container.empty();
         this.plugin.settings.playlistData.forEach((track, index) => {
             new Setting(container)
@@ -508,14 +817,6 @@ renderTrackList(container: HTMLElement) {
                     new Notice("Track deleted.");
                 }));
         });
-        
-        if (this.plugin.settings.playlistData.length === 0) {
-            // 【修正箇所】styleプロパティをオブジェクト内から除外
-            const msg = container.createDiv({ text: "No tracks." });
-            msg.style.textAlign = "center";
-            msg.style.color = "var(--text-muted)";
-            msg.style.padding = "20px";
-        }
     }
 }
 
@@ -562,8 +863,8 @@ export default class ZenZonePlugin extends Plugin {
         this.overlayEl = document.body.createDiv({ cls: "zen-break-overlay" });
         const content = this.overlayEl.createDiv({ cls: "zen-break-content" });
         content.createEl("h1", { text: "🎉 Session Complete" });
-        content.createDiv({ text: "Take a deep breath." });
-        const closeBtn = content.createEl("button", { text: "Return" });
+        content.createDiv({ text: "Great work! You've completed 4 cycles." });
+        const closeBtn = content.createEl("button", { text: "Finish" });
         closeBtn.onclick = () => { if (this.overlayEl) { this.overlayEl.remove(); this.overlayEl = null; } };
     }
 }
