@@ -85,3 +85,5 @@ This plugin was refactored by a **UX Psychology Architect** based on the followi
 Made with 💜 for the Obsidian Community.
 
 </div>
+
+2KioNMMplOs
