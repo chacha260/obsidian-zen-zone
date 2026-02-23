@@ -1,4 +1,7 @@
-import { Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, App, Setting, setIcon, Modal, ButtonComponent, DropdownComponent } from 'obsidian';
+import { 
+    Plugin, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, App, 
+    Setting, setIcon, Modal, ButtonComponent, moment, normalizePath, TFile
+} from 'obsidian';
 
 const VIEW_TYPE_ZEN = "zen-zone-view";
 
@@ -6,9 +9,9 @@ const VIEW_TYPE_ZEN = "zen-zone-view";
 // 0. Constants & Constraints
 // ------------------------------------------------------------
 const TIME_CONSTRAINTS = {
-    work: { min: 15, max: 30, default: 25 },
-    shortBreak: { min: 3, max: 10, default: 5 },
-    longBreak: { min: 15, max: 30, default: 30 }
+    work: { min: 15, max: 60, default: 25 },
+    shortBreak: { min: 3, max: 15, default: 5 },
+    longBreak: { min: 15, max: 45, default: 30 }
 };
 
 // ------------------------------------------------------------
@@ -25,10 +28,17 @@ interface PlaylistItem {
     checkpoints?: Checkpoint[];
 }
 
-// 音楽設定用の参照型
 interface MusicReference {
     trackIndex: number;
     checkpointIndex: number; // -1 の場合は最初から
+}
+
+interface TaskItem {
+    id: string;
+    content: string;
+    completed: boolean;
+    header?: string;
+    filePath?: string;
 }
 
 interface ZenZoneSettings {
@@ -37,10 +47,24 @@ interface ZenZoneSettings {
     workDuration: number;
     shortBreakDuration: number;
     longBreakDuration: number;
-    // Music Preferences
-    workMusic: MusicReference;
-    breakMusic: MusicReference;
+    // Preferences
+    autoCollapseSidebars: boolean;
+    hideHeader: boolean;
+    autoLogToDaily: boolean;
+    showStatusBarTimer: boolean;
+    // Task Data
+    tasks: TaskItem[];
+    // Music Preferences (4 cycles)
+    workMusic: MusicReference[];
+    breakMusic: MusicReference[];
+    // Daily Note Settings
+    dailyNoteFormat: string;
+    dailyNoteFolder: string;
+    dailyNoteTargetHeader: string;
 }
+
+const DEFAULT_MUSIC_REF_WORK: MusicReference = { trackIndex: 0, checkpointIndex: -1 };
+const DEFAULT_MUSIC_REF_BREAK: MusicReference = { trackIndex: 1, checkpointIndex: -1 };
 
 const DEFAULT_SETTINGS: ZenZoneSettings = {
     playlistData: [
@@ -56,36 +80,63 @@ const DEFAULT_SETTINGS: ZenZoneSettings = {
                 { label: "🌅 Morning", time: "0:00" },
                 { label: "🌃 Night", time: "10:30" }
             ]
+        },
+        { 
+            title: "🌧 Rain Sounds", 
+            url: "https://www.youtube.com/watch?v=mPZkdNFkNps",
+            checkpoints: []
         }
     ],
     workDuration: TIME_CONSTRAINTS.work.default,
     shortBreakDuration: TIME_CONSTRAINTS.shortBreak.default,
     longBreakDuration: TIME_CONSTRAINTS.longBreak.default,
-    workMusic: { trackIndex: 0, checkpointIndex: -1 },
-    breakMusic: { trackIndex: 1, checkpointIndex: -1 }
+    autoCollapseSidebars: false,
+    hideHeader: false,
+    autoLogToDaily: false,
+    showStatusBarTimer: false,
+    tasks: [],
+    workMusic: Array(4).fill(null).map(() => ({ ...DEFAULT_MUSIC_REF_WORK })),
+    breakMusic: Array(4).fill(null).map(() => ({ ...DEFAULT_MUSIC_REF_BREAK })),
+    dailyNoteFormat: "YYYY-MM-DD",
+    dailyNoteFolder: "",
+    dailyNoteTargetHeader: "Todo"
 }
 
 enum TimerState {
     Idle,
-    Focus,      // 作業中
-    ShortBreak, // 短い休憩
-    LongBreak   // 長い休憩
+    Focus,
+    ShortBreak,
+    LongBreak
 }
 
 // ------------------------------------------------------------
-// 2. YouTube Iframe Wrapper
+// 2. YouTube Iframe Wrapper (Playlist Fix Applied)
 // ------------------------------------------------------------
 class YouTubeAudio {
     private iframe: HTMLIFrameElement;
     
-    constructor(container: HTMLElement, videoId: string) {
+    constructor(container: HTMLElement, videoId: string | null, listId: string | null) {
         const existing = container.querySelector('iframe');
         if (existing) existing.remove();
 
         this.iframe = container.createEl("iframe");
         this.iframe.width = "0";
         this.iframe.height = "0";
-        this.iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&loop=1&playlist=${videoId}`;
+        
+        let srcUrl = "https://www.youtube.com/embed/";
+        
+        if (videoId) {
+            srcUrl += `${videoId}?enablejsapi=1&controls=0`;
+            if (listId) {
+                srcUrl += `&list=${listId}`;
+            } else {
+                srcUrl += `&loop=1&playlist=${videoId}`;
+            }
+        } else if (listId) {
+            srcUrl += `?enablejsapi=1&controls=0&listType=playlist&list=${listId}`;
+        }
+
+        this.iframe.src = srcUrl;
         this.iframe.allow = "autoplay";
         this.iframe.style.display = "none";
     }
@@ -114,9 +165,8 @@ class ZenView extends ItemView {
     timerInterval: number | null = null;
     timeLeft: number = 0;
     
-    // State
     currentState: TimerState = TimerState.Idle;
-    cycleCount: number = 0; // 0 to 3 (4 cycles)
+    cycleCount: number = 0;
     isMusicPlaying: boolean = false; 
 
     ytPlayer: YouTubeAudio | null = null;
@@ -124,15 +174,19 @@ class ZenView extends ItemView {
     currentVolume: number = 0.5;
 
     // UI Elements
+    taskCardEl: HTMLElement | null = null;
     musicBtnEl: HTMLButtonElement | null = null;
     timerDisplayEl: HTMLElement | null = null;
     statusLabelEl: HTMLElement | null = null;
     cycleIndicatorEl: HTMLElement | null = null;
+    
+    // Drag & Drop State
+    dragSrcIndex: number = -1;
+    taskListHeight: string | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZenZonePlugin) {
         super(leaf);
         this.plugin = plugin;
-        // 初期時間は設定から読み込む
         this.timeLeft = this.plugin.settings.workDuration * 60;
     }
 
@@ -145,11 +199,36 @@ class ZenView extends ItemView {
         container.empty();
         container.addClass("zen-view-container");
 
+        // Inject Styles for Resizer
+        const styleId = "zen-zone-styles";
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement("style");
+            style.id = styleId;
+            style.innerHTML = `
+                .zen-task-list-wrapper::-webkit-resizer {
+                    background-color: var(--interactive-accent);
+                    border-radius: 4px;
+                    border: 2px solid var(--background-secondary);
+                }
+                .zen-task-list-wrapper { padding-bottom: 10px; }
+            `;
+            document.head.appendChild(style);
+        }
+
         const header = container.createDiv({ cls: "zen-header" });
-        header.createEl("h2", { text: "Zen Zone" });
+        header.createEl("h2", { text: "Zen Zone" }).style.margin = "10px 0 5px 0";
         
-        this.renderTimerCard(container);
-        this.renderAudioCard(container);
+        // Task Card
+        this.taskCardEl = container.createDiv({ cls: "zen-card zen-task-card" });
+        this.renderTaskCard(this.taskCardEl);
+
+        // Timer Card
+        const timerCardEl = container.createDiv();
+        this.renderTimerCard(timerCardEl);
+
+        // Audio Card
+        const audioCardEl = container.createDiv();
+        this.renderAudioCard(audioCardEl);
 
         container.createDiv({
             text: "Cycle & Music settings in plugin options.",
@@ -157,79 +236,268 @@ class ZenView extends ItemView {
         });
     }
 
+    // --- Task UI ---
+    renderTaskCard(container: HTMLElement) {
+        container.empty();
+
+        const focusWrapper = container.createDiv({ cls: "zen-task-focus-wrapper" });
+        focusWrapper.createDiv({ text: "🔥 Current Focus", cls: "zen-sub-label" });
+
+        const activeTask = this.plugin.settings.tasks[0];
+        const focusDisplay = focusWrapper.createDiv({ cls: "zen-task-focus-display" });
+
+        if (activeTask) {
+            const cb = focusDisplay.createEl("input", { type: "checkbox", cls: "zen-task-cb-large" });
+            cb.checked = false;
+            cb.onclick = async () => {
+                cb.checked = true;
+                setTimeout(async () => {
+                    const idx = this.plugin.settings.tasks.indexOf(activeTask);
+                    if (idx > -1) {
+                        await this.plugin.manageDailyTask(activeTask.content, activeTask.header, 'complete', activeTask.filePath);
+                        this.plugin.settings.tasks.splice(idx, 1);
+                        await this.plugin.saveSettings();
+                        this.renderTaskCardRefresh();
+                        new Notice("Task Completed! 🎉");
+                    }
+                }, 500);
+            };
+
+            const textSpan = focusDisplay.createSpan({ text: activeTask.content, cls: "zen-task-text-large" });
+            if (activeTask.header) {
+                const headerTag = textSpan.createSpan({ text: ` [${activeTask.header}]`, cls: "zen-task-header-tag" });
+                headerTag.setAttribute("style", "font-size: 0.6em; color: var(--text-muted); margin-left: 8px; vertical-align: middle;");
+            }
+        } else {
+            focusDisplay.createSpan({ text: "No active tasks. Great job! 🎉", cls: "zen-task-text-placeholder" });
+        }
+
+        const inputWrapper = container.createDiv({ cls: "zen-task-input-wrapper" });
+        const defaultHeader = this.plugin.settings.dailyNoteTargetHeader || "Todo";
+        const headerInput = inputWrapper.createEl("input", { type: "text", placeholder: defaultHeader, cls: "zen-task-add-input" });
+        headerInput.style.flexGrow = "0";
+        headerInput.style.width = "80px";
+        headerInput.style.minWidth = "60px";
+        headerInput.title = "Target Header (Optional)";
+
+        const taskInput = inputWrapper.createEl("input", { type: "text", placeholder: "Add a new task...", cls: "zen-task-add-input" });
+
+        const handleAddTask = async () => {
+            if (!taskInput.value.trim()) return;
+            const todayStr = moment().format(this.plugin.settings.dailyNoteFormat);
+            const folder = this.plugin.settings.dailyNoteFolder ? normalizePath(this.plugin.settings.dailyNoteFolder) : "";
+            const filePath = folder ? `${folder}/${todayStr}.md` : `${todayStr}.md`;
+            
+            const newTask: TaskItem = {
+                id: Date.now().toString(),
+                content: taskInput.value.trim(),
+                completed: false,
+                header: headerInput.value.trim() || undefined,
+                filePath: filePath
+            };
+
+            this.plugin.settings.tasks.push(newTask);
+            await this.plugin.manageDailyTask(newTask.content, newTask.header, 'add', filePath);
+            await this.plugin.saveSettings();
+            
+            taskInput.value = "";
+            this.renderTaskCardRefresh();
+        };
+
+        taskInput.addEventListener("keypress", (e) => { if (e.key === "Enter") handleAddTask(); });
+        headerInput.addEventListener("keypress", (e) => { if (e.key === "Enter") taskInput.focus(); });
+
+        const addBtn = inputWrapper.createEl("button", { text: "+", cls: "zen-task-add-btn" });
+        addBtn.onclick = handleAddTask;
+
+        const listWrapper = container.createDiv({ cls: "zen-task-list-wrapper" });
+        listWrapper.style.resize = "vertical";
+        listWrapper.style.overflow = "auto";
+        listWrapper.style.minHeight = "100px";
+        listWrapper.style.maxHeight = "none";
+        listWrapper.style.paddingBottom = "5px";
+        
+        if (this.taskListHeight) {
+            listWrapper.style.height = this.taskListHeight;
+        } else {
+            listWrapper.style.height = "200px";
+        }
+
+        listWrapper.addEventListener('dragover', (e) => { e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect = 'move'; });
+        listWrapper.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            if (e.target === listWrapper && this.dragSrcIndex > -1) {
+                const tasks = this.plugin.settings.tasks;
+                const [moved] = tasks.splice(this.dragSrcIndex, 1);
+                tasks.push(moved);
+                await this.plugin.saveSettings();
+                this.renderTaskCardRefresh();
+                this.dragSrcIndex = -1;
+            }
+        });
+
+        if (this.plugin.settings.tasks.length > 0) {
+            this.plugin.settings.tasks.forEach((task, index) => {
+                const row = listWrapper.createDiv({ cls: "zen-task-row" });
+                row.draggable = true;
+                row.style.cursor = "move";
+
+                row.addEventListener('dragstart', (e) => {
+                    this.dragSrcIndex = index;
+                    row.style.opacity = '0.4';
+                    if(e.dataTransfer) {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', index.toString());
+                    }
+                });
+
+                row.addEventListener('dragover', (e) => { e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect = 'move'; return false; });
+                row.addEventListener('drop', async (e) => {
+                    e.stopPropagation();
+                    if (this.dragSrcIndex !== index && this.dragSrcIndex > -1) {
+                        const tasks = this.plugin.settings.tasks;
+                        const [movedTask] = tasks.splice(this.dragSrcIndex, 1);
+                        tasks.splice(index, 0, movedTask);
+                        await this.plugin.saveSettings();
+                        this.renderTaskCardRefresh();
+                    }
+                    return false;
+                });
+                row.addEventListener('dragend', () => { row.style.opacity = '1'; this.dragSrcIndex = -1; });
+
+                const cb = row.createEl("input", { type: "checkbox", cls: "zen-task-cb" });
+                cb.checked = false;
+                cb.onclick = async () => {
+                    cb.checked = true;
+                    row.addClass('is-completed');
+                    setTimeout(async () => {
+                        const idx = this.plugin.settings.tasks.indexOf(task);
+                        if (idx > -1) {
+                            await this.plugin.manageDailyTask(task.content, task.header, 'complete', task.filePath);
+                            this.plugin.settings.tasks.splice(idx, 1);
+                            await this.plugin.saveSettings();
+                            this.renderTaskCardRefresh();
+                        }
+                    }, 500);
+                };
+
+                const textSpan = row.createSpan({ cls: "zen-task-text" });
+                textSpan.setText(task.content);
+                if (task.header) {
+                    const hSpan = textSpan.createSpan({ text: ` #${task.header}` });
+                    hSpan.style.color = "var(--text-muted)";
+                    hSpan.style.fontSize = "0.85em";
+                    hSpan.style.marginLeft = "8px";
+                }
+
+                const controls = row.createDiv({ cls: "zen-task-row-controls" });
+
+                if (index > 0) {
+                    const upBtn = controls.createEl("button", { cls: "zen-task-control-btn" });
+                    setIcon(upBtn, "arrow-up");
+                    upBtn.onclick = async () => {
+                        [this.plugin.settings.tasks[index], this.plugin.settings.tasks[index - 1]] = [this.plugin.settings.tasks[index - 1], this.plugin.settings.tasks[index]];
+                        await this.plugin.saveSettings();
+                        this.renderTaskCardRefresh();
+                    };
+                }
+
+                if (index < this.plugin.settings.tasks.length - 1) {
+                    const downBtn = controls.createEl("button", { cls: "zen-task-control-btn" });
+                    setIcon(downBtn, "arrow-down");
+                    downBtn.onclick = async () => {
+                        [this.plugin.settings.tasks[index], this.plugin.settings.tasks[index + 1]] = [this.plugin.settings.tasks[index + 1], this.plugin.settings.tasks[index]];
+                        await this.plugin.saveSettings();
+                        this.renderTaskCardRefresh();
+                    };
+                }
+
+                const delBtn = controls.createEl("button", { cls: "zen-task-control-btn is-danger" });
+                setIcon(delBtn, "trash");
+                delBtn.onclick = async () => {
+                    await this.plugin.manageDailyTask(task.content, task.header, 'delete', task.filePath);
+                    this.plugin.settings.tasks.splice(index, 1);
+                    await this.plugin.saveSettings();
+                    this.renderTaskCardRefresh();
+                };
+            });
+        }
+    }
+
+    renderTaskCardRefresh() {
+        if (this.taskCardEl) {
+            const listWrapper = this.taskCardEl.querySelector(".zen-task-list-wrapper") as HTMLElement;
+            if (listWrapper) {
+                this.taskListHeight = listWrapper.style.height || `${listWrapper.offsetHeight}px`;
+            }
+            this.renderTaskCard(this.taskCardEl);
+        }
+    }
+
+    // --- Timer UI ---
     renderTimerCard(parent: HTMLElement) {
         const card = parent.createDiv({ cls: "zen-card zen-timer-card" });
+        card.style.padding = "10px";
         
-        // Status & Cycle info
         const metaRow = card.createDiv({ cls: "zen-timer-meta" });
         this.statusLabelEl = metaRow.createDiv({ cls: "zen-status-label", text: "Ready" });
         this.cycleIndicatorEl = metaRow.createDiv({ cls: "zen-cycle-indicator", text: "Cycle: 0/4" });
 
-        // Timer Display
         this.timerDisplayEl = card.createDiv({ cls: "zen-timer-display" });
         this.timerDisplayEl.setText(this.formatTime(this.timeLeft));
+        this.timerDisplayEl.style.fontSize = "3.5rem";
+        this.timerDisplayEl.style.margin = "10px 0";
 
-        // Controls
         const controls = card.createDiv({ cls: "zen-controls" });
-        
-        // UI改善: 誤クリック防止のため距離を離す (Flexbox)
         controls.style.display = "flex";
         controls.style.justifyContent = "space-between";
         controls.style.alignItems = "center";
         controls.style.width = "100%";
-        controls.style.marginTop = "5px";
+        controls.style.marginTop = "10px";
 
         const toggleBtn = controls.createEl("button", { cls: "zen-main-btn" });
         toggleBtn.setText("Start Focus");
         setIcon(toggleBtn, "timer");
         toggleBtn.onclick = () => this.toggleTimer(toggleBtn);
         
-        // Reset Button
         const resetBtn = controls.createEl("button", { cls: "zen-sub-btn", text: "Reset" });
-        
-        // UI改善: リセットボタンに色をつけて目立たせる
-        resetBtn.style.backgroundColor = "var(--interactive-accent-hover)"; // 必要に応じて具体的な色コードに変更 (#e74c3c など)
-        resetBtn.style.color = "var(--text-on-accent)";
-        resetBtn.style.border = "1px solid var(--background-modifier-border)";
-        // 注意色にする場合
         resetBtn.style.backgroundColor = "#c0392b"; 
         resetBtn.style.color = "white";
-
         resetBtn.onclick = () => this.resetSystem(toggleBtn);
     }
 
+    // --- Audio UI ---
     renderAudioCard(parent: HTMLElement) {
         const card = parent.createDiv({ cls: "zen-card zen-audio-card" });
+        card.style.padding = "10px";
         const playlist = this.plugin.settings.playlistData;
         const playerContainer = card.createDiv({ cls: "zen-player-hidden" });
 
-        // --- Track Selection ---
         const selectWrapper = card.createDiv({ cls: "zen-input-group" });
         selectWrapper.createDiv({ cls: "zen-label", text: "Manual Select" });
         
         const selectEl = selectWrapper.createEl("select", { cls: "zen-select" });
-        let firstValidId: string | null = null;
+        
+        let firstValidInfo: { videoId: string|null, listId: string|null } | null = null;
         let currentTrackCheckpoints: Checkpoint[] = [];
 
         playlist.forEach((track, index) => {
-            const videoId = this.extractVideoId(track.url);
-            if (videoId) {
+            const info = this.extractYouTubeInfo(track.url);
+            if (info.videoId || info.listId) {
                 const option = selectEl.createEl("option", { text: track.title });
-                option.value = JSON.stringify({ id: videoId, index: index });
-                if (!firstValidId) {
-                    firstValidId = videoId;
+                option.value = JSON.stringify({ info: info, index: index });
+                if (!firstValidInfo) {
+                    firstValidInfo = info;
                     currentTrackCheckpoints = track.checkpoints || [];
                 }
             }
         });
 
-        // --- Checkpoints Container (Reference for re-rendering) ---
         const checkpointsContainer = card.createDiv({ cls: "zen-checkpoints-area" });
 
-        // --- Player Init Logic ---
-        const initPlayer = (videoId: string, checkpoints: Checkpoint[]) => {
-            this.currentVideoId = videoId;
-            this.ytPlayer = new YouTubeAudio(playerContainer, videoId);
+        const initPlayer = (info: {videoId: string|null, listId: string|null}, checkpoints: Checkpoint[]) => {
+            this.currentVideoId = info.videoId;
+            this.ytPlayer = new YouTubeAudio(playerContainer, info.videoId, info.listId);
             this.ytPlayer.setVolume(this.currentVolume);
             this.renderCheckpoints(checkpointsContainer, checkpoints);
 
@@ -243,17 +511,16 @@ class ZenView extends ItemView {
             }
         };
 
-        if (firstValidId) initPlayer(firstValidId, currentTrackCheckpoints);
+        if (firstValidInfo) initPlayer(firstValidInfo, currentTrackCheckpoints);
 
         selectEl.onchange = () => {
             try {
                 const val = JSON.parse(selectEl.value);
                 const track = playlist[val.index];
-                initPlayer(val.id, track.checkpoints || []);
+                initPlayer(val.info, track.checkpoints || []);
             } catch(e) { console.error(e); }
         };
 
-        // --- Playback Controls ---
         const controlsRow = card.createDiv({ cls: "zen-audio-controls-row" });
         controlsRow.style.display = "flex";
         controlsRow.style.alignItems = "center";
@@ -277,21 +544,17 @@ class ZenView extends ItemView {
             if (this.ytPlayer) this.ytPlayer.setVolume(val);
         });
 
-        // Expose initPlayer for other methods to use
         this.loadTrackByReference = (ref: MusicReference) => {
             const track = playlist[ref.trackIndex];
             if(!track) return;
-            const videoId = this.extractVideoId(track.url);
-            if(videoId) {
-                // UI上のSelect要素も合わせる（見た目の同期）
-                selectEl.value = JSON.stringify({ id: videoId, index: ref.trackIndex });
-                initPlayer(videoId, track.checkpoints || []);
+            const info = this.extractYouTubeInfo(track.url);
+            if(info.videoId || info.listId) {
+                selectEl.value = JSON.stringify({ info: info, index: ref.trackIndex });
+                initPlayer(info, track.checkpoints || []);
                 
-                // チェックポイント指定があればシーク
                 if (ref.checkpointIndex >= 0 && track.checkpoints && track.checkpoints[ref.checkpointIndex]) {
                     const timeStr = track.checkpoints[ref.checkpointIndex].time;
                     const sec = this.parseTimeString(timeStr);
-                    // Playerのロード時間を少し待つ必要がある
                     setTimeout(() => {
                         this.ytPlayer?.seekTo(sec);
                         new Notice(`🎵 Loaded: ${track.title} (${track.checkpoints![ref.checkpointIndex].label})`);
@@ -303,7 +566,6 @@ class ZenView extends ItemView {
         };
     }
     
-    // 外部からPlayerを操作するためのプレースホルダ関数（renderAudioCard内で実装される）
     loadTrackByReference: (ref: MusicReference) => void = () => {};
 
     renderCheckpoints(container: HTMLElement, checkpoints: Checkpoint[]) {
@@ -326,10 +588,8 @@ class ZenView extends ItemView {
     }
 
     // --- Core Logic: Timer & Cycle ---
-
     toggleTimer(btn: HTMLButtonElement) {
         if (this.currentState !== TimerState.Idle) {
-            // STOP/PAUSE
             this.stopTimer();
             this.currentState = TimerState.Idle;
             btn.setText("Resume Focus");
@@ -337,27 +597,25 @@ class ZenView extends ItemView {
             setIcon(btn, "timer");
             this.plugin.exitZenMode();
             this.updateStatusDisplay();
+            this.plugin.updateStatusBar("");
         } else {
-            // START
-            // サイクル開始時でなければ再開、0なら初期スタート
             if (this.cycleCount === 0 && this.timeLeft === this.plugin.settings.workDuration * 60) {
                  this.startCycle(TimerState.Focus);
             } else {
-                 this.runTimer(); // Resume
+                 this.runTimer(); 
             }
             
             this.currentState = (this.timeLeft === this.plugin.settings.workDuration * 60) ? TimerState.Focus : this.currentState;
-            if(this.currentState === TimerState.Idle) this.currentState = TimerState.Focus; // Default Fallback
+            if(this.currentState === TimerState.Idle) this.currentState = TimerState.Focus;
 
             btn.setText("Stop Focus");
             btn.addClass("is-active");
             setIcon(btn, "x");
             this.plugin.enterZenMode();
             
-            // 最初のスタート時、設定された音楽を再生
             if (!this.isMusicPlaying) {
                 this.playSceneMusic(this.currentState);
-                this.toggleMusic(); // Play
+                this.toggleMusic();
             }
         }
     }
@@ -375,26 +633,21 @@ class ZenView extends ItemView {
         btn.removeClass("is-active");
         setIcon(btn, "timer");
         this.plugin.exitZenMode();
+        this.plugin.updateStatusBar("");
     }
 
     startCycle(state: TimerState) {
         this.currentState = state;
         
-        // 時間設定
         if (state === TimerState.Focus) {
             this.timeLeft = this.plugin.settings.workDuration * 60;
-            // Focus開始時に音楽切り替え
-            this.playSceneMusic(TimerState.Focus);
         } else if (state === TimerState.ShortBreak) {
             this.timeLeft = this.plugin.settings.shortBreakDuration * 60;
-            // Break開始時に音楽切り替え
-            this.playSceneMusic(TimerState.ShortBreak);
         } else if (state === TimerState.LongBreak) {
             this.timeLeft = this.plugin.settings.longBreakDuration * 60;
-            // Break開始時に音楽切り替え
-            this.playSceneMusic(TimerState.LongBreak);
         }
         
+        this.playSceneMusic(state);
         this.updateStatusDisplay();
         this.runTimer();
     }
@@ -404,7 +657,14 @@ class ZenView extends ItemView {
         
         this.timerInterval = window.setInterval(() => {
             this.timeLeft--;
-            if (this.timerDisplayEl) this.timerDisplayEl.setText(this.formatTime(this.timeLeft));
+            const timeStr = this.formatTime(this.timeLeft);
+            if (this.timerDisplayEl) this.timerDisplayEl.setText(timeStr);
+            
+            let icon = "⏳";
+            if(this.currentState === TimerState.Focus) icon = "🔥";
+            else if(this.currentState !== TimerState.Idle) icon = "☕";
+            
+            this.plugin.updateStatusBar(`${icon} ${timeStr}`);
             
             if (this.timeLeft <= 0) {
                 this.handlePhaseComplete();
@@ -422,25 +682,18 @@ class ZenView extends ItemView {
     handlePhaseComplete() {
         this.stopTimer();
         
-        // Cycle Logic
         if (this.currentState === TimerState.Focus) {
-            // 作業終了 -> 休憩へ
-            this.cycleCount++;
-            new Notice(`👏 Cycle ${this.cycleCount} Complete!`);
-            
-            if (this.cycleCount >= 4) {
-                // 4回終わったら長い休憩
+            if (this.cycleCount >= 3) { // 0, 1, 2, 3(4th) -> Long Break
                 this.startCycle(TimerState.LongBreak);
             } else {
-                // それ以外は短い休憩
                 this.startCycle(TimerState.ShortBreak);
             }
         } else if (this.currentState === TimerState.ShortBreak) {
-            // 短休憩終了 -> 作業へ
+            this.cycleCount++;
             new Notice("🔔 Break is over. Back to Focus.");
             this.startCycle(TimerState.Focus);
         } else if (this.currentState === TimerState.LongBreak) {
-            // 長休憩終了 -> 全セット完了
+            this.cycleCount++;
             this.plugin.showBreakOverlay();
             this.resetSystem(this.containerEl.querySelector(".zen-main-btn") as HTMLButtonElement);
             new Notice("🎉 All Cycles Complete!");
@@ -448,12 +701,13 @@ class ZenView extends ItemView {
     }
 
     playSceneMusic(state: TimerState) {
-        // 現在の設定を取得
+        const cycleIdx = Math.min(this.cycleCount, 3);
         let musicRef: MusicReference | null = null;
+        
         if (state === TimerState.Focus) {
-            musicRef = this.plugin.settings.workMusic;
+            musicRef = this.plugin.settings.workMusic[cycleIdx];
         } else {
-            musicRef = this.plugin.settings.breakMusic;
+            musicRef = this.plugin.settings.breakMusic[cycleIdx];
         }
 
         if (musicRef) {
@@ -471,9 +725,8 @@ class ZenView extends ItemView {
         
         this.statusLabelEl.setText(label);
         
-        // 4サイクル中の何回目かを表示。休憩中もサイクル数は維持または次への準備
-        const displayCycle = this.cycleCount < 4 ? this.cycleCount + 1 : 4;
-        this.cycleIndicatorEl.setText(`Cycle: ${this.currentState === TimerState.Idle ? 0 : displayCycle}/4`);
+        const displayCycle = this.currentState === TimerState.Idle ? 0 : this.cycleCount + 1;
+        this.cycleIndicatorEl.setText(`Cycle: ${Math.min(displayCycle, 4)}/4`);
     }
 
     // --- Music Control ---
@@ -505,12 +758,28 @@ class ZenView extends ItemView {
         return 0;
     }
 
-    extractVideoId(input: string): string | null {
-        if (!input) return null;
-        if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
-        const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-        const match = input.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
+    extractYouTubeInfo(input: string): { videoId: string | null, listId: string | null } {
+        if (!input) return { videoId: null, listId: null };
+        
+        let videoId: string | null = null;
+        let listId: string | null = null;
+
+        const listMatch = input.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+        if (listMatch) {
+            listId = listMatch[1];
+        }
+
+        if (/^[a-zA-Z0-9_-]{11}$/.test(input)) {
+            videoId = input;
+        } else {
+            const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = input.match(regExp);
+            if (match && match[2].length === 11) {
+                videoId = match[2];
+            }
+        }
+
+        return { videoId, listId };
     }
 
     createSlider(container: HTMLElement, callback: (val: number) => void) {
@@ -536,8 +805,6 @@ class ZenView extends ItemView {
 // ------------------------------------------------------------
 // 4. Settings GUI
 // ------------------------------------------------------------
-
-// A. Track Editor Modal
 class TrackEditorModal extends Modal {
     track: PlaylistItem;
     onSubmit: (track: PlaylistItem) => void;
@@ -595,16 +862,9 @@ class TrackEditorModal extends Modal {
     onClose() { this.contentEl.empty(); }
 }
 
-// B. Main Settings Tab (Enhanced)
 class ZenZoneSettingTab extends PluginSettingTab {
     plugin: ZenZonePlugin;
-    
-    // 一時的な値を保持する変数（反映ボタンを押すまで保存しない）
-    tempSettings: {
-        work: number,
-        short: number,
-        long: number
-    };
+    tempSettings: { work: number, short: number, long: number };
 
     constructor(app: App, plugin: ZenZonePlugin) { 
         super(app, plugin); 
@@ -625,64 +885,99 @@ class ZenZoneSettingTab extends PluginSettingTab {
         containerEl.empty();
         containerEl.createEl('h2', { text: 'Zen Zone Settings' });
         
-        // --- 1. Timer Settings (Enhanced with Sliders + Input + Validation) ---
+        // --- General Settings ---
+        containerEl.createEl('h3', { text: '⚙️ General' });
+        new Setting(containerEl)
+            .setName('Auto-collapse Sidebars')
+            .setDesc('作業開始時にサイドバー（左右）を自動で閉じる')
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.autoCollapseSidebars).onChange(async (val) => {
+                this.plugin.settings.autoCollapseSidebars = val;
+                await this.plugin.saveSettings();
+            }));
+
+        new Setting(containerEl)
+            .setName('Hide Header & UI Elements')
+            .setDesc('作業開始時に上部のヘッダーやリボン等を非表示にする')
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.hideHeader).onChange(async (val) => {
+                this.plugin.settings.hideHeader = val;
+                await this.plugin.saveSettings();
+            }));
+
+        new Setting(containerEl)
+            .setName('Show Timer in Status Bar')
+            .setDesc('ステータスバーに残り時間を表示する')
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.showStatusBarTimer).onChange(async (val) => {
+                this.plugin.settings.showStatusBarTimer = val;
+                await this.plugin.saveSettings();
+            }));
+
+        // --- Daily Note Logging ---
+        containerEl.createEl('h3', { text: '📝 Daily Note Logging' });
+        new Setting(containerEl)
+            .setName('Enable Auto-Log')
+            .setDesc('タスク作成時にDaily Noteへ追記し、完了時に時間を記録する')
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.autoLogToDaily).onChange(async (val) => {
+                this.plugin.settings.autoLogToDaily = val;
+                await this.plugin.saveSettings();
+                this.display(); // re-render to show/hide folder settings
+            }));
+
+        if (this.plugin.settings.autoLogToDaily) {
+            new Setting(containerEl)
+                .setName('Daily Note Folder')
+                .setDesc('Daily Noteの保存フォルダ (例: DailyNotes)。空欄はルート。')
+                .addText(text => text.setPlaceholder('DailyNotes').setValue(this.plugin.settings.dailyNoteFolder).onChange(async (val) => {
+                    this.plugin.settings.dailyNoteFolder = val;
+                    await this.plugin.saveSettings();
+                }));
+            new Setting(containerEl)
+                .setName('Date Format')
+                .setDesc('ファイル名の日付形式 (例: YYYY-MM-DD)')
+                .addText(text => text.setPlaceholder('YYYY-MM-DD').setValue(this.plugin.settings.dailyNoteFormat).onChange(async (val) => {
+                    this.plugin.settings.dailyNoteFormat = val;
+                    await this.plugin.saveSettings();
+                }));
+            new Setting(containerEl)
+                .setName('Default Target Header')
+                .setDesc('タスクを追加するデフォルトの見出し名')
+                .addText(text => text.setPlaceholder('Todo').setValue(this.plugin.settings.dailyNoteTargetHeader).onChange(async (val) => {
+                    this.plugin.settings.dailyNoteTargetHeader = val;
+                    await this.plugin.saveSettings();
+                }));
+        }
+
+        // --- Timer Configuration ---
         containerEl.createEl('h3', { text: '⏱ Timer Configuration' });
-        
-        // Work Duration
-        this.createTimeSetting(
-            containerEl, 
-            "作業時間 (Focus)", 
-            `基本: ${TIME_CONSTRAINTS.work.default}分 | 範囲: ${TIME_CONSTRAINTS.work.min} - ${TIME_CONSTRAINTS.work.max}分`,
-            TIME_CONSTRAINTS.work,
-            'work'
-        );
+        this.createTimeSetting(containerEl, "作業時間 (Focus)", `基本: ${TIME_CONSTRAINTS.work.default}分 | 範囲: ${TIME_CONSTRAINTS.work.min} - ${TIME_CONSTRAINTS.work.max}分`, TIME_CONSTRAINTS.work, 'work');
+        this.createTimeSetting(containerEl, "小休憩 (Short Break)", `基本: ${TIME_CONSTRAINTS.shortBreak.default}分 | 範囲: ${TIME_CONSTRAINTS.shortBreak.min} - ${TIME_CONSTRAINTS.shortBreak.max}分`, TIME_CONSTRAINTS.shortBreak, 'short');
+        this.createTimeSetting(containerEl, "大休憩 (Long Break)", `基本: ${TIME_CONSTRAINTS.longBreak.default}分 | 範囲: ${TIME_CONSTRAINTS.longBreak.min} - ${TIME_CONSTRAINTS.longBreak.max}分`, TIME_CONSTRAINTS.longBreak, 'long');
 
-        // Short Break
-        this.createTimeSetting(
-            containerEl, 
-            "小休憩 (Short Break)", 
-            `基本: ${TIME_CONSTRAINTS.shortBreak.default}分 | 範囲: ${TIME_CONSTRAINTS.shortBreak.min} - ${TIME_CONSTRAINTS.shortBreak.max}分`,
-            TIME_CONSTRAINTS.shortBreak,
-            'short'
-        );
-
-        // Long Break
-        this.createTimeSetting(
-            containerEl, 
-            "大休憩 (Long Break)", 
-            `基本: ${TIME_CONSTRAINTS.longBreak.default}分 | 範囲: ${TIME_CONSTRAINTS.longBreak.min} - ${TIME_CONSTRAINTS.longBreak.max}分`,
-            TIME_CONSTRAINTS.longBreak,
-            'long'
-        );
-
-        // --- Apply Button for Time Settings ---
         const btnContainer = containerEl.createDiv({ cls: "zen-setting-apply-container" });
-        btnContainer.style.marginTop = "20px";
-        btnContainer.style.marginBottom = "30px";
+        btnContainer.style.marginTop = "10px";
+        btnContainer.style.marginBottom = "10px";
         btnContainer.style.textAlign = "right";
+        new ButtonComponent(btnContainer).setButtonText("設定を保存・反映").setCta().onClick(async () => {
+            this.saveTimeSettings();
+        });
 
-        new ButtonComponent(btnContainer)
-            .setButtonText("設定を保存・反映")
-            .setCta() // Call to Action color
-            .onClick(async () => {
-                this.saveTimeSettings();
-            });
+        // --- Cycle Music Schedule ---
+        containerEl.createEl('h3', { text: '🎵 Cycle Music Schedule' });
+        containerEl.createDiv({ text: "Configure different music for each of the 4 cycles.", cls: "setting-item-description" });
 
+        for (let i = 0; i < 4; i++) {
+            const isLongBreak = (i === 3);
+            containerEl.createEl('h4', { text: `Cycle ${i + 1}`, cls: "zen-cycle-header" });
+            this.addMusicSetting(containerEl, "Focus Music", "", this.plugin.settings.workMusic[i]);
+            this.addMusicSetting(containerEl, `Break Music (${isLongBreak ? "Long" : "Short"})`, "", this.plugin.settings.breakMusic[i]);
+        }
 
-        // --- 2. Music Automation Settings ---
-        containerEl.createEl('h3', { text: '🎵 Scene Music' });
-        containerEl.createDiv({ text: "Automatically switch music when phase changes.", cls: "setting-item-description" });
-
-        this.addMusicSetting(containerEl, "Work Music", "Music to play during Focus", this.plugin.settings.workMusic);
-        this.addMusicSetting(containerEl, "Break Music", "Music to play during Break", this.plugin.settings.breakMusic);
-
-        // --- 3. Playlist Manager ---
+        // --- Playlist Manager ---
         containerEl.createEl('h3', { text: 'Playlist Manager' });
         const listContainer = containerEl.createDiv();
         this.renderTrackList(listContainer);
         
         const addContainer = containerEl.createDiv({ cls: "zen-setting-add-container" });
-        addContainer.style.marginTop = "20px";
+        addContainer.style.marginTop = "10px";
         new ButtonComponent(addContainer).setButtonText("Add New Track").setCta().onClick(() => {
             new TrackEditorModal(this.app, null, async (newTrack) => {
                 this.plugin.settings.playlistData.push(newTrack);
@@ -692,26 +987,20 @@ class ZenZoneSettingTab extends PluginSettingTab {
         });
     }
 
-    // Helper to create sync slider + input
     createTimeSetting(container: HTMLElement, name: string, desc: string, limits: {min: number, max: number}, key: 'work'|'short'|'long') {
-        const setting = new Setting(container)
-            .setName(name)
-            .setDesc(desc);
+        const setting = new Setting(container).setName(name).setDesc(desc);
 
-        // 1. Slider
         setting.addSlider(slider => {
             slider.setLimits(limits.min, limits.max, 1);
             slider.setValue(this.tempSettings[key]);
             slider.setDynamicTooltip();
             slider.onChange(val => {
                 this.tempSettings[key] = val;
-                // テキストボックスも更新 (DOM操作で簡易的に同期)
                 const inputEl = setting.controlEl.querySelector(`input[type="number"]`) as HTMLInputElement;
                 if(inputEl) inputEl.value = val.toString();
             });
         });
 
-        // 2. Number Input (addTextを使い、属性をnumberにする)
         setting.addText(text => {
             text.inputEl.type = "number";
             text.inputEl.style.width = "60px";
@@ -720,7 +1009,6 @@ class ZenZoneSettingTab extends PluginSettingTab {
                 const num = parseInt(val);
                 if (!isNaN(num)) {
                     this.tempSettings[key] = num;
-                    // スライダーも更新
                     const sliderEl = setting.controlEl.querySelector(`input[type="range"]`) as HTMLInputElement;
                     if(sliderEl) sliderEl.value = num.toString();
                 }
@@ -729,43 +1017,20 @@ class ZenZoneSettingTab extends PluginSettingTab {
     }
 
     async saveTimeSettings() {
-        // バリデーションとクランプ処理
         const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
-
-        // Work
-        const wLimit = TIME_CONSTRAINTS.work;
-        const newWork = clamp(this.tempSettings.work, wLimit.min, wLimit.max);
-
-        // Short
-        const sLimit = TIME_CONSTRAINTS.shortBreak;
-        const newShort = clamp(this.tempSettings.short, sLimit.min, sLimit.max);
-
-        // Long
-        const lLimit = TIME_CONSTRAINTS.longBreak;
-        const newLong = clamp(this.tempSettings.long, lLimit.min, lLimit.max);
-
-        // 設定の保存
-        this.plugin.settings.workDuration = newWork;
-        this.plugin.settings.shortBreakDuration = newShort;
-        this.plugin.settings.longBreakDuration = newLong;
+        this.plugin.settings.workDuration = clamp(this.tempSettings.work, TIME_CONSTRAINTS.work.min, TIME_CONSTRAINTS.work.max);
+        this.plugin.settings.shortBreakDuration = clamp(this.tempSettings.short, TIME_CONSTRAINTS.shortBreak.min, TIME_CONSTRAINTS.shortBreak.max);
+        this.plugin.settings.longBreakDuration = clamp(this.tempSettings.long, TIME_CONSTRAINTS.longBreak.min, TIME_CONSTRAINTS.longBreak.max);
         
         await this.plugin.saveSettings();
-        
-        // Temp変数を保存された値で更新
         this.resetTempSettings();
-
-        // UIリフレッシュ (自動補正された値を表示するため)
         this.display();
-        
-        new Notice("Time settings saved and applied! (Values clamped to limits)");
+        new Notice("Time settings saved!");
     }
 
     addMusicSetting(container: HTMLElement, name: string, desc: string, targetRef: MusicReference) {
-        const setting = new Setting(container)
-            .setName(name)
-            .setDesc(desc);
+        const setting = new Setting(container).setName(name).setDesc(desc);
 
-        // Track Selector
         setting.addDropdown(dropdown => {
             this.plugin.settings.playlistData.forEach((track, idx) => {
                 dropdown.addOption(idx.toString(), track.title);
@@ -773,16 +1038,14 @@ class ZenZoneSettingTab extends PluginSettingTab {
             dropdown.setValue(targetRef.trackIndex.toString());
             dropdown.onChange(async (val) => {
                 targetRef.trackIndex = parseInt(val);
-                // トラックが変わったらチェックポイントはリセット
                 targetRef.checkpointIndex = -1; 
                 await this.plugin.saveSettings();
-                this.display(); // チェックポイントのDropdownを更新するためにリロード
+                this.display(); 
             });
         });
 
-        // Checkpoint Selector (Optional)
         setting.addDropdown(dropdown => {
-            dropdown.addOption("-1", "Start from beginning");
+            dropdown.addOption("-1", "Start");
             const selectedTrack = this.plugin.settings.playlistData[targetRef.trackIndex];
             if (selectedTrack && selectedTrack.checkpoints) {
                 selectedTrack.checkpoints.forEach((cp, idx) => {
@@ -826,17 +1089,199 @@ class ZenZoneSettingTab extends PluginSettingTab {
 export default class ZenZonePlugin extends Plugin {
     settings: ZenZoneSettings;
     overlayEl: HTMLElement | null = null;
+    statusBarItem: HTMLElement | null = null;
 
     async onload() {
         await this.loadSettings();
+        
+        this.statusBarItem = this.addStatusBarItem();
+        this.updateStatusBar("");
+
         this.addSettingTab(new ZenZoneSettingTab(this.app, this));
         this.registerView(VIEW_TYPE_ZEN, (leaf) => new ZenView(leaf, this));
         this.addRibbonIcon('zap', 'Open Zen Zone', () => this.activateView());
     }
 
-    async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
+    async loadSettings() { 
+        const loadedData = await this.loadData();
+        const settings = Object.assign({}, DEFAULT_SETTINGS, loadedData);
+        
+        // Handle migration for workMusic/breakMusic from single ref to array
+        if (!Array.isArray(settings.workMusic)) {
+            const oldRef = loadedData?.workMusic || DEFAULT_MUSIC_REF_WORK;
+            settings.workMusic = Array(4).fill(null).map(() => ({ ...oldRef }));
+        }
+        if (!Array.isArray(settings.breakMusic)) {
+            const oldRef = loadedData?.breakMusic || DEFAULT_MUSIC_REF_BREAK;
+            settings.breakMusic = Array(4).fill(null).map(() => ({ ...oldRef }));
+        }
+        
+        this.settings = settings;
+    }
+
     async saveSettings() { await this.saveData(this.settings); }
 
+    updateStatusBar(text: string) {
+        if (!this.statusBarItem) return;
+        if (this.settings.showStatusBarTimer && text) {
+            this.statusBarItem.setText(text);
+            this.statusBarItem.show();
+        } else {
+            this.statusBarItem.hide();
+        }
+    }
+
+    // --- Daily Note Utilities ---
+    async ensureFolderExists(folderPath: string) {
+        const parts = folderPath.split('/');
+        // The last part is the file name, so we exclude it
+        const folders = parts.slice(0, -1);
+        if (folders.length === 0) return;
+
+        let currentPath = '';
+        for (const folder of folders) {
+            currentPath = currentPath === '' ? folder : `${currentPath}/${folder}`;
+            const abstractFile = this.app.vault.getAbstractFileByPath(currentPath);
+            if (!abstractFile) {
+                await this.app.vault.createFolder(currentPath);
+            }
+        }
+    }
+
+    getDailyNoteTemplatePath(): string | null {
+        try {
+            // Check if the core daily-notes plugin is enabled and get its template
+            const dailyNotesPlugin = (this.app as any).internalPlugins.plugins["daily-notes"];
+            if (dailyNotesPlugin && dailyNotesPlugin.enabled) {
+                return dailyNotesPlugin.instance.options.template;
+            }
+        } catch (e) {
+            console.error("ZenZone: Failed to get daily notes template path", e);
+        }
+        return null;
+    }
+
+    async getTemplateContent(templatePath: string): Promise<string> {
+        const tFile = this.app.vault.getAbstractFileByPath(normalizePath(templatePath + ".md"));
+        if (tFile instanceof TFile) {
+            let content = await this.app.vault.read(tFile);
+            
+            // Basic template variable replacements (simulating some of Obsidian's defaults)
+            const today = moment();
+            content = content.replace(/{{\s*date\s*}}/gi, today.format("YYYY-MM-DD"));
+            content = content.replace(/{{\s*time\s*}}/gi, today.format("HH:mm"));
+            content = content.replace(/{{\s*title\s*}}/gi, today.format(this.settings.dailyNoteFormat));
+            // Date with format e.g. {{date:YYYY-MM-DD}}
+            content = content.replace(/{{\s*date:([^}]+)\s*}}/gi, (match, format) => {
+                return today.format(format.trim());
+            });
+
+            return content;
+        }
+        return "";
+    }
+
+    async manageDailyTask(content: string, header: string | undefined, action: 'add' | 'complete' | 'delete', filePath?: string) {
+        if (!this.settings.autoLogToDaily) return;
+
+        const nowStr = moment();
+        const folder = this.settings.dailyNoteFolder ? normalizePath(this.settings.dailyNoteFolder) : "";
+        
+        let targetPath = filePath;
+        if (!targetPath) {
+            const fileName = nowStr.format(this.settings.dailyNoteFormat);
+            targetPath = folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
+        }
+
+        const targetHeader = header || this.settings.dailyNoteTargetHeader || "Todo";
+        let file = this.app.vault.getAbstractFileByPath(targetPath);
+
+        // --- Create Note if missing ---
+        if (!file) {
+            if (action === 'add') {
+                try {
+                    await this.ensureFolderExists(targetPath);
+                    
+                    let initialContent = "";
+                    const templatePath = this.getDailyNoteTemplatePath();
+                    
+                    if (templatePath) {
+                        initialContent = await this.getTemplateContent(templatePath);
+                    }
+                    
+                    if (initialContent) {
+                        await this.app.vault.create(targetPath, initialContent);
+                        new Notice(`Daily Note Created from Template: ${targetPath}`);
+                        file = this.app.vault.getAbstractFileByPath(targetPath);
+                    } else {
+                        // Fallback empty note structure
+                        const taskLine = `- [ ] ${content}`;
+                        initialContent = `# ${nowStr.format("YYYY-MM-DD")}\n\n## ${targetHeader}\n${taskLine}\n`;
+                        await this.app.vault.create(targetPath, initialContent);
+                        new Notice(`Daily Note Created: ${targetPath}`);
+                        return; // Created with task already in it
+                    }
+                } catch (err) {
+                    console.error("Failed to create daily note:", err);
+                    new Notice("Failed to create Daily Note.");
+                    return;
+                }
+            } else {
+                console.warn(`Target file not found: ${targetPath}`);
+                return;
+            }
+        }
+
+        // --- Modify Note ---
+        if (file instanceof TFile) {
+            let fileContent = await this.app.vault.read(file);
+            let updatedContent = fileContent;
+            const escapeRegex = content.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            if (action === 'add') {
+                if (fileContent.includes(`- [ ] ${content}`)) return; // Prevent exact duplicates
+
+                const taskLine = `- [ ] ${content}`;
+                const escapedHeader = targetHeader.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const headerRegex = new RegExp(`(#{1,6}\\s+${escapedHeader}[\\s\\S]*?)(?=\\n#{1,6}\\s|$)`, 'i');
+                
+                if (fileContent.match(headerRegex)) {
+                    // Append to existing header section
+                    updatedContent = fileContent.replace(headerRegex, (match) => {
+                        return `${match.trimEnd()}\n${taskLine}\n`;
+                    });
+                } else {
+                    // Append header and task to bottom if header doesn't exist
+                    updatedContent = fileContent.trimEnd() + `\n\n## ${targetHeader}\n${taskLine}`;
+                }
+                new Notice(`Task added to ${targetHeader}`);
+
+            } else if (action === 'complete') {
+                const searchRegex = new RegExp(`^([\\s\\t]*)[-*+]\\s+\\[ \\]\\s+${escapeRegex}\\s*$`, 'm');
+                const completedLine = `- [x] ${nowStr.format("HH:mm")} ${content}`;
+                
+                if (searchRegex.test(fileContent)) {
+                    updatedContent = fileContent.replace(searchRegex, `$1${completedLine}`);
+                    new Notice(`Task marked completed in ${file.basename}`);
+                } else {
+                    new Notice(`Task not found in ${file.basename}.`);
+                }
+
+            } else if (action === 'delete') {
+                const searchRegex = new RegExp(`^([\\s\\t]*)[-*+]\\s+\\[.\\]\\s+.*?${escapeRegex}\\s*(\\n|$)`, 'm');
+                if (searchRegex.test(fileContent)) {
+                    updatedContent = fileContent.replace(searchRegex, "");
+                    new Notice(`Task deleted from ${file.basename}`);
+                }
+            }
+
+            if (fileContent !== updatedContent) {
+                await this.app.vault.modify(file, updatedContent);
+            }
+        }
+    }
+
+    // --- View/Mode Management ---
     async activateView() {
         const { workspace } = this.app;
         let leaf: WorkspaceLeaf | null | undefined = workspace.getLeavesOfType(VIEW_TYPE_ZEN)[0];
@@ -849,13 +1294,20 @@ export default class ZenZonePlugin extends Plugin {
 
     enterZenMode() {
         document.body.classList.add('zen-mode-active');
-        if (this.app.workspace.leftSplit) this.app.workspace.leftSplit.collapse();
-        if (this.app.workspace.rightSplit) this.app.workspace.rightSplit.collapse();
+        if (this.settings.autoCollapseSidebars) {
+            if (this.app.workspace.leftSplit) this.app.workspace.leftSplit.collapse();
+            if (this.app.workspace.rightSplit) this.app.workspace.rightSplit.collapse();
+        }
+        if (this.settings.hideHeader) {
+            document.body.classList.add('zen-hide-header');
+        }
         new Notice("🧘 Focus Mode On");
     }
 
     exitZenMode() {
         document.body.classList.remove('zen-mode-active');
+        document.body.classList.remove('zen-hide-header');
+        this.updateStatusBar(""); // Clear status timer
         new Notice("Focus Mode Off");
     }
 
