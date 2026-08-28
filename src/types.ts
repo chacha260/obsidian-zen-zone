@@ -49,6 +49,8 @@ export interface ZenZoneSettings {
 	hideHeader: boolean;
 	autoLogToDaily: boolean;
 	showStatusBarTimer: boolean;
+	/** Minutes of silence before the YouTube player is torn down. 0 disables it. */
+	audioIdleReleaseMinutes: number;
 	tasks: ZenTask[];
 	workMusic: MusicReference[];
 	breakMusic: MusicReference[];
@@ -98,6 +100,7 @@ export interface YouTubePlayer {
 	playVideoAt(index: number): void;
 	getPlaylist(): string[] | null;
 	getPlaylistIndex(): number;
+	getCurrentTime(): number;
 	getVideoData(): { title?: string } | null;
 	loadPlaylist(options: { listType: string; list: string; index: number; startSeconds: number }): void;
 	loadVideoById(options: { videoId: string; startSeconds: number }): void;

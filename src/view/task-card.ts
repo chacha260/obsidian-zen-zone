@@ -8,10 +8,16 @@ const COMPLETION_FEEDBACK_MS = 500;
 
 const DEFAULT_LIST_HEIGHT = "200px";
 
+type RowAction = "complete" | "up" | "down" | "delete";
+
 /**
  * The task card: the current focus task, an input to add tasks, and the
- * reorderable backlog. It owns its own listeners so a re-render detaches only
- * its own handlers and leaves the rest of the view working.
+ * reorderable backlog.
+ *
+ * Row interaction is delegated to the list container, so the number of live
+ * listeners stays constant no matter how long the backlog gets, and a re-render
+ * does not have to rebuild one closure per control. The card also owns its own
+ * listener registry, so refreshing it leaves the rest of the view working.
  */
 export class TaskCard {
 	private readonly listeners = new DomListenerRegistry();
@@ -127,21 +133,25 @@ export class TaskCard {
 		const listWrapper = this.el.createDiv({ cls: "zen-task-list-wrapper" });
 		listWrapper.style.height = this.listHeight ?? DEFAULT_LIST_HEIGHT;
 
-		this.listeners.add(listWrapper, "dragover", (event) => this.allowDrop(event));
-		this.listeners.add(listWrapper, "drop", (event) => {
-			event.preventDefault();
-			// Dropping on the empty area below the rows sends the task to the end.
-			if (event.target === listWrapper) void this.moveTask(this.tasks.length - 1);
-		});
-
+		this.attachListDelegates(listWrapper);
 		this.tasks.forEach((task, index) => this.renderRow(listWrapper, task, index));
 	}
 
-	private renderRow(listWrapper: HTMLElement, task: ZenTask, index: number): void {
-		const row = listWrapper.createDiv({ cls: "zen-task-row" });
-		row.draggable = true;
+	/** Five listeners for the whole backlog, however many rows it holds. */
+	private attachListDelegates(listWrapper: HTMLElement): void {
+		this.listeners.add(listWrapper, "click", (event) => {
+			const control = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
+			if (!control) return;
+			const row = control.closest<HTMLElement>(".zen-task-row");
+			const index = this.indexOfRow(row);
+			if (index < 0) return;
+			void this.runRowAction(control.dataset.action as RowAction, index, row);
+		});
 
-		this.listeners.add(row, "dragstart", (event) => {
+		this.listeners.add(listWrapper, "dragstart", (event) => {
+			const row = (event.target as HTMLElement).closest<HTMLElement>(".zen-task-row");
+			const index = this.indexOfRow(row);
+			if (index < 0 || !row) return;
 			this.dragSrcIndex = index;
 			row.addClass("is-dragging");
 			const transfer = (event as DragEvent).dataTransfer;
@@ -150,68 +160,81 @@ export class TaskCard {
 				transfer.setData("text/plain", index.toString());
 			}
 		});
-		this.listeners.add(row, "dragover", (event) => this.allowDrop(event));
-		this.listeners.add(row, "drop", (event) => {
-			event.stopPropagation();
-			void this.moveTask(index);
+
+		this.listeners.add(listWrapper, "dragover", (event) => {
+			event.preventDefault();
+			const transfer = (event as DragEvent).dataTransfer;
+			if (transfer) transfer.dropEffect = "move";
 		});
-		this.listeners.add(row, "dragend", () => {
-			row.removeClass("is-dragging");
+
+		this.listeners.add(listWrapper, "drop", (event) => {
+			event.preventDefault();
+			const row = (event.target as HTMLElement).closest<HTMLElement>(".zen-task-row");
+			// Dropping below the last row sends the task to the end.
+			const target = this.indexOfRow(row);
+			void this.moveTask(target < 0 ? this.tasks.length - 1 : target);
+		});
+
+		this.listeners.add(listWrapper, "dragend", (event) => {
+			(event.target as HTMLElement).closest<HTMLElement>(".zen-task-row")?.removeClass("is-dragging");
 			this.dragSrcIndex = -1;
 		});
+	}
+
+	private indexOfRow(row: HTMLElement | null): number {
+		if (!row?.dataset.index) return -1;
+		const index = parseInt(row.dataset.index, 10);
+		return index >= 0 && index < this.tasks.length ? index : -1;
+	}
+
+	private renderRow(listWrapper: HTMLElement, task: ZenTask, index: number): void {
+		const row = listWrapper.createDiv({ cls: "zen-task-row" });
+		row.draggable = true;
+		row.dataset.index = index.toString();
 
 		const checkbox = row.createEl("input", { type: "checkbox", cls: "zen-task-cb" });
 		checkbox.checked = false;
-		this.listeners.add(checkbox, "click", () => {
-			checkbox.checked = true;
-			row.addClass("is-completed");
-			this.completeTask(task);
-		});
+		checkbox.dataset.action = "complete";
 
 		const text = row.createSpan({ cls: "zen-task-text", text: task.content });
 		if (task.header) {
 			text.createSpan({ text: ` #${task.header}`, cls: "zen-task-header-tag" });
 		}
 
-		this.renderRowControls(row, task, index);
-	}
-
-	private renderRowControls(row: HTMLElement, task: ZenTask, index: number): void {
 		const controls = row.createDiv({ cls: "zen-task-row-controls" });
-
-		if (index > 0) {
-			this.addControl(controls, "arrow-up", "Move up", () => this.swapTasks(index, index - 1));
-		}
-		if (index < this.tasks.length - 1) {
-			this.addControl(controls, "arrow-down", "Move down", () => this.swapTasks(index, index + 1));
-		}
-		this.addControl(controls, "trash", "Delete", async () => {
-			await this.plugin.dailyNotes.manageTask(task.content, task.header, "delete", task.filePath);
-			this.tasks.splice(index, 1);
-			await this.plugin.saveSettings();
-			this.refresh();
-		}, "is-danger");
+		if (index > 0) this.addControl(controls, "up", "arrow-up", "Move up");
+		if (index < this.tasks.length - 1) this.addControl(controls, "down", "arrow-down", "Move down");
+		this.addControl(controls, "delete", "trash", "Delete", "is-danger");
 	}
 
-	private addControl(
-		parent: HTMLElement,
-		icon: string,
-		tooltip: string,
-		onClick: () => Promise<void>,
-		extraClass = ""
-	): void {
+	private addControl(parent: HTMLElement, action: RowAction, icon: string, tooltip: string, extraClass = ""): void {
 		const btn = parent.createEl("button", { cls: `zen-task-control-btn ${extraClass}`.trim() });
 		setIcon(btn, icon);
 		btn.title = tooltip;
-		this.listeners.add(btn, "click", () => void onClick());
+		btn.dataset.action = action;
 	}
 
 	// --- Mutations -------------------------------------------------------
 
-	private allowDrop(event: Event): void {
-		event.preventDefault();
-		const transfer = (event as DragEvent).dataTransfer;
-		if (transfer) transfer.dropEffect = "move";
+	private async runRowAction(action: RowAction, index: number, row: HTMLElement | null): Promise<void> {
+		const task = this.tasks[index];
+		if (!task) return;
+
+		switch (action) {
+			case "complete":
+				row?.addClass("is-completed");
+				this.completeTask(task);
+				return;
+			case "up":
+				return this.swapTasks(index, index - 1);
+			case "down":
+				return this.swapTasks(index, index + 1);
+			case "delete":
+				await this.plugin.dailyNotes.manageTask(task.content, task.header, "delete", task.filePath);
+				this.tasks.splice(index, 1);
+				await this.plugin.saveSettings();
+				this.refresh();
+		}
 	}
 
 	private async moveTask(targetIndex: number): Promise<void> {

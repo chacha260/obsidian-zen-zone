@@ -55,10 +55,16 @@ export class DailyNoteService {
 			if (!file) return;
 		}
 		if (!(file instanceof TFile)) return;
+		const note = file;
 
-		const currentContent = await this.app.vault.read(file);
-		const newContent = this.applyAction(action, currentContent, taskContent, targetHeader, file.basename);
-		if (newContent !== currentContent) await this.app.vault.modify(file, newContent);
+		// process() does the read-modify-write in one atomic pass, so a note the
+		// user is editing at the same time cannot lose the update. Notices are
+		// collected rather than fired inside the mutator, which must stay pure.
+		const notices: string[] = [];
+		await this.app.vault.process(note, (content) =>
+			this.applyAction(action, content, taskContent, targetHeader, note.basename, notices)
+		);
+		for (const notice of notices) new Notice(notice);
 	}
 
 	// --- Note creation ---------------------------------------------------
@@ -132,19 +138,20 @@ export class DailyNoteService {
 		content: string,
 		taskContent: string,
 		targetHeader: string,
-		noteName: string
+		noteName: string,
+		notices: string[]
 	): string {
 		switch (action) {
 			case "add":
-				return this.addTaskLine(content, taskContent, targetHeader);
+				return this.addTaskLine(content, taskContent, targetHeader, notices);
 			case "complete":
-				return this.completeTaskLine(content, taskContent, noteName);
+				return this.completeTaskLine(content, taskContent, noteName, notices);
 			case "delete":
-				return this.deleteTaskLine(content, taskContent, noteName);
+				return this.deleteTaskLine(content, taskContent, noteName, notices);
 		}
 	}
 
-	private addTaskLine(content: string, taskContent: string, targetHeader: string): string {
+	private addTaskLine(content: string, taskContent: string, targetHeader: string, notices: string[]): string {
 		const line = `- [ ] ${taskContent}`;
 		if (content.includes(line)) return content;
 
@@ -153,30 +160,30 @@ export class DailyNoteService {
 			"i"
 		);
 
-		new Notice(`Task added to ${targetHeader}`);
+		notices.push(`Task added to ${targetHeader}`);
 		if (sectionRegex.test(content)) {
 			return content.replace(sectionRegex, (section) => `${section.trimEnd()}\n${line}\n`);
 		}
 		return `${content.trimEnd()}\n\n## ${targetHeader}\n${line}`;
 	}
 
-	private completeTaskLine(content: string, taskContent: string, noteName: string): string {
+	private completeTaskLine(content: string, taskContent: string, noteName: string, notices: string[]): string {
 		const taskRegex = new RegExp(`^([\\s\\t]*)[-*+]\\s+\\[ \\]\\s+${escapeRegExp(taskContent)}\\s*$`, "m");
 		if (!taskRegex.test(content)) {
-			new Notice(`Task not found in ${noteName}.`);
+			notices.push(`Task not found in ${noteName}.`);
 			return content;
 		}
-		new Notice(`Task marked completed in ${noteName}`);
+		notices.push(`Task marked completed in ${noteName}`);
 		return content.replace(taskRegex, `$1- [x] ${window.moment().format("HH:mm")} ${taskContent}`);
 	}
 
-	private deleteTaskLine(content: string, taskContent: string, noteName: string): string {
+	private deleteTaskLine(content: string, taskContent: string, noteName: string, notices: string[]): string {
 		const deleteRegex = new RegExp(
 			`^([\\s\\t]*)[-*+]\\s+\\[.\\]\\s+.*?${escapeRegExp(taskContent)}\\s*(\\n|$)`,
 			"m"
 		);
 		if (!deleteRegex.test(content)) return content;
-		new Notice(`Task deleted from ${noteName}`);
+		notices.push(`Task deleted from ${noteName}`);
 		return content.replace(deleteRegex, "");
 	}
 }

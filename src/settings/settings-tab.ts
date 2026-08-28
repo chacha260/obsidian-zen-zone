@@ -1,4 +1,4 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ZenZonePlugin from "../main";
 import {
 	CYCLE_COUNT,
@@ -7,7 +7,7 @@ import {
 	SOUND_TRANSITIONS,
 	TIME_CONSTRAINTS
 } from "../constants";
-import { MusicReference } from "../types";
+import { MusicReference, SoundPathKey } from "../types";
 import { clamp } from "../utils";
 import { TrackEditorModal } from "./track-editor-modal";
 
@@ -16,6 +16,9 @@ const DURATION_LABEL: Record<DurationKey, string> = {
 	shortBreak: "小休憩 (Short Break)",
 	longBreak: "大休憩 (Long Break)"
 };
+
+/** Upper bound of the idle-release slider, in minutes. */
+const MAX_IDLE_RELEASE_MINUTES = 30;
 
 export class ZenZoneSettingTab extends PluginSettingTab {
 	/** Durations are staged here so the sliders only apply on "save". */
@@ -53,7 +56,24 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 
 		this.addToggle(containerEl, "Auto-collapse sidebars", "作業開始時にサイドバー(左右)を自動で閉じる", "autoCollapseSidebars");
 		this.addToggle(containerEl, "Hide header & UI elements", "作業開始時に上部のヘッダーやリボン等を非表示にする", "hideHeader");
-		this.addToggle(containerEl, "Show timer in status bar", "ステータスバーに残り時間を表示する", "showStatusBarTimer");
+		this.addToggle(containerEl, "Show timer in status bar", "ステータスバーに残り時間を表示する。パネルを閉じてもセッションは続きます。", "showStatusBarTimer");
+
+		new Setting(containerEl)
+			.setName("Release audio engine when idle")
+			.setDesc(
+				"無音がこの分数続いたらYouTubeプレイヤーを破棄してメモリを解放します。" +
+					"次の再生で同じ位置から自動的に復帰します。0で無効。"
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, MAX_IDLE_RELEASE_MINUTES, 1)
+					.setValue(clamp(this.plugin.settings.audioIdleReleaseMinutes, 0, MAX_IDLE_RELEASE_MINUTES))
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.audioIdleReleaseMinutes = value;
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 
 	private addToggle(
@@ -183,21 +203,23 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("🔊 Sound effects").setHeading();
 		containerEl.createDiv({
 			cls: "setting-item-description",
-			text: "Vault内の音声ファイルのパス(例: Assets/start.m4a)と、BGMを待機させる時間(秒)を指定してください。"
+			text: "Vault内の音声ファイルのパス(例: Assets/start.m4a)と、BGMを待機させる時間(秒)を指定してください。▶ で試聴できます。"
 		});
 
 		for (const { name, pathKey, durationKey } of SOUND_TRANSITIONS) {
 			new Setting(containerEl)
 				.setName(name)
-				.addText((text) =>
-					text
-						.setPlaceholder("File path")
+				.addText((text) => {
+					const markValidity = () => this.markPathValidity(text.inputEl, this.plugin.settings[pathKey]);
+					text.setPlaceholder("File path")
 						.setValue(this.plugin.settings[pathKey])
 						.onChange(async (value) => {
 							this.plugin.settings[pathKey] = value;
 							await this.plugin.saveSettings();
-						})
-				)
+							markValidity();
+						});
+					markValidity();
+				})
 				.addText((text) => {
 					text.inputEl.type = "number";
 					text.inputEl.addClass("zen-duration-input");
@@ -207,8 +229,32 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 							this.plugin.settings[durationKey] = parseInt(value, 10) || 0;
 							await this.plugin.saveSettings();
 						});
-				});
+				})
+				.addExtraButton((btn) =>
+					btn
+						.setIcon("play")
+						.setTooltip("Preview this sound")
+						.onClick(() => this.previewSound(pathKey))
+				);
 		}
+	}
+
+	/** Flags a path that is set but does not resolve to a file in the vault. */
+	private markPathValidity(inputEl: HTMLInputElement, path: string): void {
+		inputEl.toggleClass("zen-path-missing", Boolean(path) && this.plugin.resolveSoundSrc(path) === null);
+	}
+
+	private previewSound(pathKey: SoundPathKey): void {
+		const path = this.plugin.settings[pathKey];
+		if (!path) {
+			new Notice("先にファイルパスを入力してください。");
+			return;
+		}
+		if (!this.plugin.resolveSoundSrc(path)) {
+			new Notice(`ファイルが見つかりません: ${path}`);
+			return;
+		}
+		this.plugin.playLocalSound(path);
 	}
 
 	// --- Per-cycle music -------------------------------------------------
@@ -230,6 +276,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 
 	private addMusicSetting(containerEl: HTMLElement, name: string, targetRef: MusicReference): void {
 		const setting = new Setting(containerEl).setName(name);
+		let checkpointDropdown: DropdownComponent | null = null;
 
 		setting.addDropdown((dropdown) => {
 			this.plugin.settings.playlistData.forEach((track, index) => dropdown.addOption(index.toString(), track.title));
@@ -237,20 +284,28 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 				targetRef.trackIndex = parseInt(value, 10);
 				targetRef.checkpointIndex = -1;
 				await this.plugin.saveSettings();
-				// The checkpoint dropdown below depends on the selected track.
-				this.display();
+				// Only the checkpoint list depends on this; redrawing the whole
+				// tab here would rebuild every option in every cycle.
+				if (checkpointDropdown) this.fillCheckpointOptions(checkpointDropdown, targetRef);
 			});
 		});
 
 		setting.addDropdown((dropdown) => {
-			dropdown.addOption("-1", "Start");
-			const track = this.plugin.settings.playlistData[targetRef.trackIndex];
-			track?.checkpoints?.forEach((cp, index) => dropdown.addOption(index.toString(), `${cp.label} (${cp.time})`));
-			dropdown.setValue(targetRef.checkpointIndex.toString()).onChange(async (value) => {
+			checkpointDropdown = dropdown;
+			this.fillCheckpointOptions(dropdown, targetRef);
+			dropdown.onChange(async (value) => {
 				targetRef.checkpointIndex = parseInt(value, 10);
 				await this.plugin.saveSettings();
 			});
 		});
+	}
+
+	private fillCheckpointOptions(dropdown: DropdownComponent, ref: MusicReference): void {
+		dropdown.selectEl.empty();
+		dropdown.addOption("-1", "Start");
+		const track = this.plugin.settings.playlistData[ref.trackIndex];
+		track?.checkpoints?.forEach((cp, index) => dropdown.addOption(index.toString(), `${cp.label} (${cp.time})`));
+		dropdown.setValue(ref.checkpointIndex.toString());
 	}
 
 	// --- Playlist --------------------------------------------------------
@@ -297,4 +352,3 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 			});
 	}
 }
-

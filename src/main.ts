@@ -1,6 +1,7 @@
 import { Notice, Plugin, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { CYCLE_COUNT, DEFAULT_BREAK_REF, DEFAULT_MUSIC_REF, DEFAULT_SETTINGS, VIEW_TYPE_ZEN, createMusicSchedule } from "./constants";
 import { DailyNoteService } from "./daily-note";
+import { FocusSession } from "./session";
 import { MusicReference, ZenZoneSettings } from "./types";
 import { ZenView } from "./view/zen-view";
 import { ZenZoneSettingTab } from "./settings/settings-tab";
@@ -8,9 +9,13 @@ import { ZenZoneSettingTab } from "./settings/settings-tab";
 export default class ZenZonePlugin extends Plugin {
 	settings!: ZenZoneSettings;
 	dailyNotes!: DailyNoteService;
+	/** Owned here rather than by the view, so a session outlives the Zen panel. */
+	session!: FocusSession;
 
 	private statusBarItem: HTMLElement | null = null;
 	private overlayEl: HTMLElement | null = null;
+	/** One reused element for every transition cue, instead of one per playback. */
+	private cueAudio: HTMLAudioElement | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -19,14 +24,30 @@ export default class ZenZonePlugin extends Plugin {
 		this.statusBarItem = this.addStatusBarItem();
 		this.updateStatusBar("");
 
+		this.session = new FocusSession(this);
+		this.register(() => this.session.dispose());
+
 		this.addSettingTab(new ZenZoneSettingTab(this.app, this));
 		this.registerView(VIEW_TYPE_ZEN, (leaf) => new ZenView(leaf, this));
 		this.addRibbonIcon("zap", "Open Zen Zone", () => void this.activateView());
+
+		// The session runs without the panel, so it needs panel-free controls.
+		this.addCommand({
+			id: "toggle-focus-timer",
+			name: "Start or pause the focus timer",
+			callback: () => this.session.toggle()
+		});
+		this.addCommand({
+			id: "reset-focus-session",
+			name: "Reset the focus session",
+			callback: () => this.session.reset()
+		});
 	}
 
 	onunload(): void {
 		this.clearZenMode();
 		this.removeBreakOverlay();
+		this.releaseCueAudio();
 	}
 
 	// --- Settings --------------------------------------------------------
@@ -115,15 +136,43 @@ export default class ZenZonePlugin extends Plugin {
 		this.overlayEl = null;
 	}
 
-	// --- Sounds ----------------------------------------------------------
+	// --- Transition cues -------------------------------------------------
 
-	/** Plays a sound file stored in the vault; silently ignores an empty or missing path. */
-	playLocalSound(path: string): void {
-		if (!path) return;
+	/** Resolves a vault path to a playable URL, or null when the file is missing. */
+	resolveSoundSrc(path: string): string | null {
+		if (!path) return null;
 		const file = this.app.vault.getAbstractFileByPath(normalizePath(path));
-		if (!(file instanceof TFile)) return;
+		return file instanceof TFile ? this.app.vault.adapter.getResourcePath(file.path) : null;
+	}
 
-		const audio = new Audio(this.app.vault.adapter.getResourcePath(file.path));
+	/** Plays a cue from the vault through the one shared audio element. */
+	playLocalSound(path: string): void {
+		const src = this.resolveSoundSrc(path);
+		if (!src) return;
+
+		const audio = (this.cueAudio ??= this.createCueAudio());
+		audio.pause();
+		audio.src = src;
 		audio.play().catch((error) => console.error("Zen Zone: failed to play sound", error));
+	}
+
+	private createCueAudio(): HTMLAudioElement {
+		const audio = new Audio();
+		// Drop the decoded buffer as soon as the cue finishes.
+		audio.addEventListener("ended", () => this.dropCueBuffer());
+		return audio;
+	}
+
+	private dropCueBuffer(): void {
+		if (!this.cueAudio) return;
+		this.cueAudio.removeAttribute("src");
+		this.cueAudio.load();
+	}
+
+	private releaseCueAudio(): void {
+		if (!this.cueAudio) return;
+		this.cueAudio.pause();
+		this.dropCueBuffer();
+		this.cueAudio = null;
 	}
 }

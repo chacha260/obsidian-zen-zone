@@ -31,7 +31,8 @@ Activate **Zen Mode** to eliminate distractions.
 - **Distraction-free:** Hides sidebars and status bars automatically.
 - **Visual Clarity:** Large, tabular-numeral display for instant recognition.
 - **Full Pomodoro Cycle:** Four focus blocks with short breaks, closing on a long break.
-- **Status Bar Timer:** Optionally keep the countdown visible while the panel is hidden.
+- **Runs Without the Panel:** The session lives in the plugin, not the view. Close the Zen panel and the countdown keeps going in the status bar; drive it from the command palette with *Start or pause the focus timer*.
+- **Sleep-Proof:** The countdown tracks an absolute deadline, so it neither drifts nor stalls when your machine sleeps.
 - **Completion Loop:** A "Session Complete" overlay utilizes the *Zeigarnik Effect* to provide closure and a moment to breathe.
 
 ### 2. 🎧 Ambient Audio Engine
@@ -40,6 +41,7 @@ Seamlessly integrate YouTube ambiances (Lofi, Jazz, Nature sounds) without leavi
 - **Decoupled Control:** Play music without the timer, or run the timer in silence. You have full control.
 - **Transport Controls:** Skip, shuffle and repeat (off / all / one) across a whole YouTube playlist.
 - **Per-Cycle Scheduling:** Give each of the four cycles its own focus and break track.
+- **Lazy & Self-Releasing:** The YouTube player is created on your first play, never before, and is torn down again after a configurable stretch of silence — resuming from the same position when you come back. A silent focus session costs nothing.
 - **Volume Mixer:** Independent volume control separate from your system audio.
 
 ### 3. 🔖 Smart Checkpoints
@@ -76,6 +78,8 @@ This plugin was refactored by a **UX Psychology Architect** based on the followi
 
 ## 🚀 Getting Started
 
+**Requires Obsidian 1.5.0 or newer.**
+
 1. **Install:** Download `main.js`, `manifest.json`, and `styles.css` into your `.obsidian/plugins/zen-zone/` folder.
 2. **Enable:** Turn on **Zen Zone** in Obsidian Community Plugins settings.
 3. **Open:** Click the ⚡ (Zap) icon in the ribbon to open the Zen Zone view.
@@ -105,6 +109,7 @@ The plugin is bundled from `src/`:
 | Path | Responsibility |
 |:---|:---|
 | `src/main.ts` | Plugin entry: settings, view registration, zen mode, status bar |
+| `src/session.ts` | The pomodoro state machine, owned by the plugin so it outlives the panel |
 | `src/constants.ts`, `src/types.ts`, `src/utils.ts` | Defaults, shared types and pure helpers |
 | `src/daily-note.ts` | Reading and rewriting task lines in the daily note |
 | `src/audio/youtube-audio.ts` | The hidden YouTube IFrame player |

@@ -42,7 +42,9 @@ export class YouTubeAudio {
 	/** Suppresses the "repeat one" guard while the user is skipping tracks. */
 	private manualTrackChange = false;
 
-	onPlaylistInfo?: (index: number, list: string[], title: string) => void;
+	/** Reports the playlist size rather than the array, which can hold hundreds of ids. */
+	onPlaylistInfo?: (index: number, total: number, title: string) => void;
+	onReady?: () => void;
 
 	constructor(container: HTMLElement, videoId: string | null, listId: string | null) {
 		container.querySelector(".yt-player-wrapper")?.remove();
@@ -129,6 +131,7 @@ export class YouTubeAudio {
 			this.playQueued = false;
 		}
 		this.updatePlaylistInfo();
+		this.onReady?.();
 	}
 
 	private onPlayerStateChange(event: YouTubePlayerEvent): void {
@@ -173,7 +176,7 @@ export class YouTubeAudio {
 	private updatePlaylistInfo(): void {
 		if (!this.onPlaylistInfo || !this.player) return;
 		try {
-			const list = this.player.getPlaylist() ?? [];
+			const total = this.player.getPlaylist()?.length ?? 0;
 			const index = this.player.getPlaylistIndex() ?? -1;
 			const title = this.player.getVideoData()?.title ?? "";
 
@@ -181,7 +184,7 @@ export class YouTubeAudio {
 			if (index === this.lastPlaylistIndex && title === this.lastVideoTitle) return;
 			this.lastPlaylistIndex = index;
 			this.lastVideoTitle = title;
-			this.onPlaylistInfo(index, list, title);
+			this.onPlaylistInfo(index, total, title);
 		} catch {
 			// Metadata is not available yet; the next state change will retry.
 		}
@@ -284,6 +287,16 @@ export class YouTubeAudio {
 		return this.isReady;
 	}
 
+	/** Current playback position in seconds, so a released player can resume where it was. */
+	getCurrentTime(): number {
+		if (!this.isReady || typeof this.player?.getCurrentTime !== "function") return 0;
+		try {
+			return this.player.getCurrentTime() || 0;
+		} catch {
+			return 0;
+		}
+	}
+
 	getCurrentTrackInfo(): { videoId: string | null; listId: string | null } {
 		return { videoId: this.currentVideoId, listId: this.currentListId };
 	}
@@ -295,6 +308,7 @@ export class YouTubeAudio {
 		this.destroyed = true;
 		this.timeouts.clearAll();
 		this.onPlaylistInfo = undefined;
+		this.onReady = undefined;
 
 		const player = this.player;
 		if (player) {

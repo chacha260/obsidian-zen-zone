@@ -58,6 +58,7 @@ export const DEFAULT_SETTINGS: ZenZoneSettings = {
 	hideHeader: false,
 	autoLogToDaily: false,
 	showStatusBarTimer: false,
+	audioIdleReleaseMinutes: 5,
 	tasks: [],
 	workMusic: createMusicSchedule(DEFAULT_MUSIC_REF),
 	breakMusic: createMusicSchedule(DEFAULT_BREAK_REF),

@@ -501,6 +501,11 @@
 	width: 60px;
 }
 
+/* A sound path that is set but does not resolve to a file in the vault. */
+.zen-path-missing {
+	border-color: var(--text-error);
+}
+
 .zen-setting-checkpoint-row input {
 	background: var(--background-modifier-form-field);
 	border: 1px solid var(--background-modifier-border);
