@@ -30,12 +30,16 @@ By decoupling time management from environmental control, it respects your auton
 Activate **Zen Mode** to eliminate distractions.
 - **Distraction-free:** Hides sidebars and status bars automatically.
 - **Visual Clarity:** Large, tabular-numeral display for instant recognition.
+- **Full Pomodoro Cycle:** Four focus blocks with short breaks, closing on a long break.
+- **Status Bar Timer:** Optionally keep the countdown visible while the panel is hidden.
 - **Completion Loop:** A "Session Complete" overlay utilizes the *Zeigarnik Effect* to provide closure and a moment to breathe.
 
 ### 2. 🎧 Ambient Audio Engine
 Seamlessly integrate YouTube ambiances (Lofi, Jazz, Nature sounds) without leaving your notes.
 - **Invisible Player:** Audio plays in the background. No ads, no distractions.
 - **Decoupled Control:** Play music without the timer, or run the timer in silence. You have full control.
+- **Transport Controls:** Skip, shuffle and repeat (off / all / one) across a whole YouTube playlist.
+- **Per-Cycle Scheduling:** Give each of the four cycles its own focus and break track.
 - **Volume Mixer:** Independent volume control separate from your system audio.
 
 ### 3. 🔖 Smart Checkpoints
@@ -46,6 +50,12 @@ Don't waste willpower searching for "the good part" of a track.
 ### 4. ⚙️ GUI Playlist Manager
 - **No JSON Editing:** A clean, modal-based interface to manage your favorite tracks.
 - **Cognitive Ease:** Visual hierarchy helps you organize titles, URLs, and checkpoints effortlessly.
+
+### 5. ✅ Tasks & Daily Note Logging
+Keep the one thing you are working on in front of you.
+- **Current Focus:** The top task is pinned above the list, so intent survives the session.
+- **Reorderable Backlog:** Drag and drop, or nudge tasks up and down.
+- **Daily Note Sync:** Adding a task appends a checkbox to today's daily note; completing it stamps the time. Uses your Daily Notes template when one is configured.
 
 ---
 
@@ -79,6 +89,29 @@ This plugin was refactored by a **UX Psychology Architect** based on the followi
 | Clean interface for deep work. | Easy playlist management. |
 
 ---
+
+---
+
+## 🛠 Development
+
+```bash
+npm install
+npm run dev     # esbuild in watch mode -> main.js
+npm run build   # type-check, then a production bundle
+```
+
+The plugin is bundled from `src/`:
+
+| Path | Responsibility |
+|:---|:---|
+| `src/main.ts` | Plugin entry: settings, view registration, zen mode, status bar |
+| `src/constants.ts`, `src/types.ts`, `src/utils.ts` | Defaults, shared types and pure helpers |
+| `src/daily-note.ts` | Reading and rewriting task lines in the daily note |
+| `src/audio/youtube-audio.ts` | The hidden YouTube IFrame player |
+| `src/view/` | The side panel: `zen-view` plus the task, timer and audio cards |
+| `src/settings/` | Settings tab and the track editor modal |
+
+All styling lives in `styles.css` so themes can override it.
 
 <div align="center">
 
