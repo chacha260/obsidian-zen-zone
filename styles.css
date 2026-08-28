@@ -1,259 +1,447 @@
 /* --- Base Layout --- */
 .zen-view-container {
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    height: 100%;
+	padding: 15px;
+	display: flex;
+	flex-direction: column;
+	gap: 15px;
+	height: 100%;
+	/* ★修正: ベースのフォントをテーマのインターフェースフォントに合わせる */
+	font-family: var(--font-interface);
 }
 
 .zen-header h2 {
-    text-align: center;
-    margin-bottom: 10px;
-    font-weight: 300;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
+	text-align: center;
+	margin: 5px 0 10px 0;
+	font-weight: 300;
+	letter-spacing: 0.05em;
+	color: var(--text-muted);
 }
 
 /* --- Card Styling --- */
 .zen-card {
-    background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	padding: 15px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+/* --- Task Card (Rich) --- */
+.zen-task-card {
+	gap: 15px;
+}
+
+/* Focus Area */
+.zen-task-focus-wrapper {
+	background: var(--background-primary);
+	padding: 15px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	text-align: center;
+}
+
+.zen-task-focus-display {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	margin-top: 5px;
+}
+
+.zen-task-cb-large {
+	width: 20px;
+	height: 20px;
+	cursor: pointer;
+}
+
+.zen-task-text-large {
+	font-size: 1.2em;
+	font-weight: bold;
+	color: var(--text-normal);
+	/* ★修正: タスク文字は本文フォントを使用 */
+	font-family: var(--font-text);
+}
+
+.zen-task-text-placeholder {
+	color: var(--text-muted);
+	font-style: italic;
+	font-family: var(--font-text);
+}
+
+/* Add Input */
+.zen-task-input-wrapper {
+	display: flex;
+	gap: 10px;
+}
+
+.zen-task-add-input {
+	flex-grow: 1;
+	background: var(--background-modifier-form-field);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 8px 12px;
+	/* ★修正: 入力欄もテーマのフォントに */
+	font-family: var(--font-text);
+	color: var(--text-normal);
+}
+
+.zen-task-add-btn {
+	padding: 0 15px;
+	font-weight: bold;
+	cursor: pointer;
+	font-family: var(--font-interface);
+}
+
+/* Task List */
+.zen-task-list-wrapper {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+.zen-task-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px;
+	border-radius: 6px;
+	background: var(--background-primary);
+	transition: background 0.2s;
+}
+
+.zen-task-row:hover {
+	background: var(--background-primary-alt);
+}
+
+.zen-task-row.is-completed .zen-task-text {
+	text-decoration: line-through;
+	color: var(--text-muted);
+}
+
+.zen-task-cb {
+	cursor: pointer;
+}
+
+.zen-task-text {
+	flex-grow: 1;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	/* ★修正: リスト内の文字も本文フォント */
+	font-family: var(--font-text);
+}
+
+.zen-task-row-controls {
+	display: flex;
+	gap: 4px;
+	opacity: 0.5;
+	transition: opacity 0.2s;
+}
+
+.zen-task-row:hover .zen-task-row-controls {
+	opacity: 1;
+}
+
+.zen-task-control-btn {
+	padding: 4px;
+	height: 24px;
+	width: 24px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	color: var(--text-muted);
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.zen-task-control-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.zen-task-control-btn.is-danger:hover {
+	color: var(--text-error);
+	background: var(--background-modifier-error-hover);
 }
 
 /* --- Timer Card --- */
 .zen-timer-card {
-    align-items: center;
-    justify-content: center;
-    padding: 30px 20px;
+	align-items: center;
+	justify-content: center;
+	padding: 20px 15px;
+}
+
+.zen-timer-meta {
+	display: flex;
+	gap: 15px;
+	font-size: 0.9em;
+	color: var(--text-muted);
+	margin-bottom: 5px;
 }
 
 .zen-timer-display {
-    font-size: 4em;
-    font-weight: 800;
-    font-family: 'SF Mono', 'Roboto Mono', monospace;
-    color: var(--text-normal);
-    line-height: 1;
-    margin-bottom: 20px;
-    font-variant-numeric: tabular-nums;
+	font-size: 3.5em;
+	font-weight: 800;
+	/* ★修正: テーマで設定された「等幅フォント」を使用 */
+	font-family: var(--font-text);
+	color: var(--text-normal);
+	line-height: 1;
+	margin: 10px 0;
+	font-variant-numeric: tabular-nums;
 }
 
-/* --- CTA Button --- */
+/* --- Controls Row --- */
+.zen-controls {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	width: 100%;
+	margin-top: 10px;
+}
+
+/* --- Main Button (Start/Stop) --- */
 .zen-main-btn {
-    width: 100%;
-    min-width: 200px;
-    padding: 12px 24px;
-    font-size: 1.1em;
-    font-weight: 600;
-    border-radius: 50px;
-    border: none;
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
-    cursor: pointer;
-    transition: transform 0.1s ease, background-color 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+	flex-grow: 1;
+	margin-right: 15px;
+	padding: 10px 20px;
+	font-size: 1.1em;
+	font-weight: 600;
+	border-radius: 50px;
+	border: none;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	transition:
+		transform 0.1s ease,
+		background-color 0.2s;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	font-family: var(--font-interface);
 }
 
 .zen-main-btn:hover {
-    transform: scale(1.02);
-    background-color: var(--interactive-accent-hover);
+	transform: scale(1.02);
+	background-color: var(--interactive-accent-hover);
 }
 
 .zen-main-btn:active {
-    transform: scale(0.98);
+	transform: scale(0.98);
 }
 
 .zen-main-btn.is-active {
-    background-color: var(--background-modifier-error);
-    color: var(--text-on-accent);
+	background-color: var(--background-modifier-error);
+	color: var(--text-on-accent);
+}
+
+/* --- Reset Button --- */
+.zen-sub-btn {
+	padding: 8px 16px;
+	font-size: 0.9em;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	transition: all 0.2s;
+	font-family: var(--font-interface);
+}
+.zen-sub-btn:hover {
+	opacity: 0.8;
 }
 
 /* --- Audio Card --- */
 .zen-input-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
 }
 
 .zen-label {
-    font-size: 0.9em;
-    color: var(--text-muted);
-    min-width: 24px;
-    display: flex;
-    align-items: center;
+	font-size: 0.9em;
+	color: var(--text-muted);
+	min-width: 24px;
+	display: flex;
+	align-items: center;
 }
 
 .zen-select {
-    flex-grow: 1;
-    padding: 8px;
-    border-radius: 6px;
-    background: var(--background-primary);
-    color: var(--text-normal);
-    border: 1px solid var(--background-modifier-border);
+	flex-grow: 1;
+	padding: 6px;
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	font-family: var(--font-interface);
 }
 
 /* --- Checkpoints Grid --- */
 .zen-checkpoints-area {
-    margin-top: 5px;
+	margin-top: 5px;
 }
 
 .zen-sub-label {
-    font-size: 0.75em;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+	font-size: 0.75em;
+	color: var(--text-muted);
+	margin-bottom: 5px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
 }
 
 .zen-chip-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 8px;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+	gap: 6px;
 }
 
 .zen-chip {
-    background-color: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 0.85em;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.2s;
-    color: var(--text-muted);
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 6px 10px;
+	font-size: 0.8em;
+	cursor: pointer;
+	text-align: center;
+	transition: all 0.2s;
+	color: var(--text-muted);
+	font-family: var(--font-interface);
 }
 
 .zen-chip:hover {
-    border-color: var(--interactive-accent);
-    color: var(--interactive-accent);
-    background-color: var(--background-primary-alt);
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
+	background-color: var(--background-primary-alt);
+}
+
+/* --- Audio Control Row --- */
+.zen-audio-controls-row {
+	margin-top: 5px;
+}
+
+.zen-music-btn {
+	width: 36px;
+	height: 36px;
+	border-radius: 50%;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.2s;
+	flex-shrink: 0;
+}
+
+.zen-music-btn:hover {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.zen-music-btn.is-playing {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 8px var(--interactive-accent);
 }
 
 /* --- Slider --- */
-.zen-slider {
-    width: 100%;
-    cursor: pointer;
-    accent-color: var(--interactive-accent);
+.zen-volume-wrapper .zen-slider {
+	width: 100%;
+	height: 4px;
+	cursor: pointer;
+	accent-color: var(--interactive-accent);
 }
 
 .zen-footer-note {
-    font-size: 0.8em;
-    color: var(--text-faint);
-    text-align: center;
-    margin-top: auto;
+	font-size: 0.8em;
+	color: var(--text-faint);
+	text-align: center;
+	margin-top: auto;
+	padding-top: 10px;
 }
 
 /* --- Settings GUI --- */
 .zen-setting-checkpoint-row input {
-    background: var(--background-modifier-form-field);
-    border: 1px solid var(--background-modifier-border);
-    padding: 5px 10px;
-    border-radius: 4px;
+	background: var(--background-modifier-form-field);
+	border: 1px solid var(--background-modifier-border);
+	padding: 5px 10px;
+	border-radius: 4px;
 }
 
 .zen-danger-btn {
-    color: var(--text-error) !important;
+	color: var(--text-error) !important;
 }
 .zen-danger-btn:hover {
-    background-color: var(--background-modifier-error-hover) !important;
-    color: var(--text-on-accent) !important;
+	background-color: var(--background-modifier-error-hover) !important;
+	color: var(--text-on-accent) !important;
 }
 
 /* --- Zen Mode Overrides --- */
-.zen-mode-active .workspace-ribbon,
-.zen-mode-active .status-bar {
-    display: none !important;
-}
-
-.zen-mode-active .workspace-tab-header-container {
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-.zen-mode-active .workspace-tab-header-container:hover {
-    opacity: 1;
+body.zen-mode-active.zen-hide-header .workspace-ribbon,
+body.zen-mode-active.zen-hide-header .status-bar,
+body.zen-mode-active.zen-hide-header .app-header,
+body.zen-mode-active.zen-hide-header .view-header,
+body.zen-mode-active.zen-hide-header .workspace-tab-header-container {
+	display: none !important;
 }
 
 /* --- Break Overlay --- */
 .zen-break-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(5px);
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: fadeIn 0.5s ease;
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.85);
+	backdrop-filter: blur(5px);
+	z-index: 9999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	animation: fadeIn 0.5s ease;
 }
 
 .zen-break-content {
-    background: var(--background-primary);
-    padding: 40px 60px;
-    border-radius: 16px;
-    text-align: center;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-    border: 1px solid var(--interactive-accent);
+	background: var(--background-primary);
+	padding: 40px 60px;
+	border-radius: 16px;
+	text-align: center;
+	box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+	border: 1px solid var(--interactive-accent);
 }
 
 .zen-break-content h1 {
-    color: var(--interactive-accent);
-    margin-bottom: 10px;
+	color: var(--interactive-accent);
+	margin-bottom: 10px;
 }
 
 .zen-break-content button {
-    margin-top: 25px;
-    padding: 10px 30px;
-    font-size: 1em;
-    background-color: var(--interactive-normal);
-    color: var(--text-normal);
-    border-radius: 6px;
-    cursor: pointer;
+	margin-top: 25px;
+	padding: 10px 30px;
+	font-size: 1em;
+	background-color: var(--interactive-normal);
+	color: var(--text-normal);
+	border-radius: 6px;
+	cursor: pointer;
+	font-family: var(--font-interface);
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
 }
 
-/* --- Audio Control Row --- */
-.zen-music-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: 1px solid var(--background-modifier-border);
-    background: var(--background-primary);
-    color: var(--text-normal);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    flex-shrink: 0; /* 潰れないようにする */
-}
-
-.zen-music-btn:hover {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-color: var(--interactive-accent);
-}
-
-.zen-music-btn.is-playing {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-color: var(--interactive-accent);
-    box-shadow: 0 0 8px var(--interactive-accent); /* 光っている演出 */
-}
-
-/* Volume wrapper tweaks */
-.zen-volume-wrapper .zen-slider {
-    height: 4px; /* スリムに */
+/* --- Small Control Button Active State (Shuffle / Repeat) --- */
+.zen-music-btn-small.is-active {
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
 }
