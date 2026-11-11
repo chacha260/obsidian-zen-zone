@@ -1,6 +1,8 @@
 import { App, Notice, TFile, normalizePath } from "obsidian";
+import { t } from "./i18n";
+import { now } from "./moment";
+import { addTaskLine, completeTaskLine, deleteTaskLine } from "./task-lines";
 import { DailyTaskAction, ZenZoneSettings } from "./types";
-import { escapeRegExp } from "./utils";
 
 interface DailyNotesInternalPlugin {
 	enabled: boolean;
@@ -28,7 +30,7 @@ export class DailyNoteService {
 
 	/** Path of today's daily note, honouring the configured folder and date format. */
 	todayPath(): string {
-		const fileName = window.moment().format(this.settings.dailyNoteFormat);
+		const fileName = now().format(this.settings.dailyNoteFormat || "YYYY-MM-DD");
 		const folder = this.settings.dailyNoteFolder ? normalizePath(this.settings.dailyNoteFolder) : "";
 		return folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
 	}
@@ -44,7 +46,7 @@ export class DailyNoteService {
 		const filePath = specificFilePath ?? this.todayPath();
 		const targetHeader = customHeader || this.settings.dailyNoteTargetHeader || "Todo";
 
-		let file = this.app.vault.getAbstractFileByPath(filePath);
+		let file = this.app.vault.getAbstractFileByPath(normalizePath(filePath));
 		if (!file) {
 			if (action !== "add") {
 				console.warn(`Zen Zone: daily note not found: ${filePath}`);
@@ -60,10 +62,18 @@ export class DailyNoteService {
 		// process() does the read-modify-write in one atomic pass, so a note the
 		// user is editing at the same time cannot lose the update. Notices are
 		// collected rather than fired inside the mutator, which must stay pure.
-		const notices: string[] = [];
-		await this.app.vault.process(note, (content) =>
-			this.applyAction(action, content, taskContent, targetHeader, note.basename, notices)
-		);
+		let notices: string[] = [];
+		try {
+			await this.app.vault.process(note, (content) => {
+				// The mutator may run more than once; only the last pass counts.
+				notices = [];
+				return this.applyAction(action, content, taskContent, targetHeader, note.basename, notices);
+			});
+		} catch (error) {
+			console.error("Zen Zone: failed to update the daily note", error);
+			new Notice(t("daily.updateFailed"));
+			return;
+		}
 		for (const notice of notices) new Notice(notice);
 	}
 
@@ -82,18 +92,18 @@ export class DailyNoteService {
 			const templateContent = templatePath ? await this.getTemplateContent(templatePath) : "";
 
 			if (!templateContent) {
-				const date = window.moment().format("YYYY-MM-DD");
+				const date = now().format("YYYY-MM-DD");
 				await this.app.vault.create(filePath, `# ${date}\n\n## ${targetHeader}\n- [ ] ${taskContent}\n`);
-				new Notice(`Daily note created: ${filePath}`);
+				new Notice(t("daily.created", { path: filePath }));
 				return null;
 			}
 
 			const created = await this.app.vault.create(filePath, templateContent);
-			new Notice(`Daily note created from template: ${filePath}`);
+			new Notice(t("daily.createdFromTemplate", { path: filePath }));
 			return created;
 		} catch (error) {
 			console.error("Zen Zone: failed to create the daily note", error);
-			new Notice("Failed to create the daily note.");
+			new Notice(t("daily.createFailed"));
 			return null;
 		}
 	}
@@ -123,12 +133,12 @@ export class DailyNoteService {
 		const templateFile = this.app.vault.getAbstractFileByPath(normalizePath(`${templatePath}.md`));
 		if (!(templateFile instanceof TFile)) return "";
 
-		const now = window.moment();
+		const current = now();
 		return (await this.app.vault.read(templateFile))
-			.replace(/{{\s*date\s*}}/gi, now.format("YYYY-MM-DD"))
-			.replace(/{{\s*time\s*}}/gi, now.format("HH:mm"))
-			.replace(/{{\s*title\s*}}/gi, now.format(this.settings.dailyNoteFormat))
-			.replace(/{{\s*date:([^}]+)\s*}}/gi, (_match, format: string) => now.format(format.trim()));
+			.replace(/{{\s*date\s*}}/gi, current.format("YYYY-MM-DD"))
+			.replace(/{{\s*time\s*}}/gi, current.format("HH:mm"))
+			.replace(/{{\s*title\s*}}/gi, current.format(this.settings.dailyNoteFormat || "YYYY-MM-DD"))
+			.replace(/{{\s*date:([^}]+)\s*}}/gi, (_match, format: string) => current.format(format.trim()));
 	}
 
 	// --- Line editing ----------------------------------------------------
@@ -142,48 +152,21 @@ export class DailyNoteService {
 		notices: string[]
 	): string {
 		switch (action) {
-			case "add":
-				return this.addTaskLine(content, taskContent, targetHeader, notices);
-			case "complete":
-				return this.completeTaskLine(content, taskContent, noteName, notices);
-			case "delete":
-				return this.deleteTaskLine(content, taskContent, noteName, notices);
+			case "add": {
+				const edit = addTaskLine(content, taskContent, targetHeader);
+				if (edit.changed) notices.push(t("daily.added", { header: targetHeader }));
+				return edit.content;
+			}
+			case "complete": {
+				const edit = completeTaskLine(content, taskContent, now().format("HH:mm"));
+				notices.push(t(edit.changed ? "daily.completed" : "daily.notFound", { note: noteName }));
+				return edit.content;
+			}
+			case "delete": {
+				const edit = deleteTaskLine(content, taskContent);
+				if (edit.changed) notices.push(t("daily.deleted", { note: noteName }));
+				return edit.content;
+			}
 		}
-	}
-
-	private addTaskLine(content: string, taskContent: string, targetHeader: string, notices: string[]): string {
-		const line = `- [ ] ${taskContent}`;
-		if (content.includes(line)) return content;
-
-		const sectionRegex = new RegExp(
-			`(#{1,6}\\s+${escapeRegExp(targetHeader)}[\\s\\S]*?)(?=\\n#{1,6}\\s|$)`,
-			"i"
-		);
-
-		notices.push(`Task added to ${targetHeader}`);
-		if (sectionRegex.test(content)) {
-			return content.replace(sectionRegex, (section) => `${section.trimEnd()}\n${line}\n`);
-		}
-		return `${content.trimEnd()}\n\n## ${targetHeader}\n${line}`;
-	}
-
-	private completeTaskLine(content: string, taskContent: string, noteName: string, notices: string[]): string {
-		const taskRegex = new RegExp(`^([\\s\\t]*)[-*+]\\s+\\[ \\]\\s+${escapeRegExp(taskContent)}\\s*$`, "m");
-		if (!taskRegex.test(content)) {
-			notices.push(`Task not found in ${noteName}.`);
-			return content;
-		}
-		notices.push(`Task marked completed in ${noteName}`);
-		return content.replace(taskRegex, `$1- [x] ${window.moment().format("HH:mm")} ${taskContent}`);
-	}
-
-	private deleteTaskLine(content: string, taskContent: string, noteName: string, notices: string[]): string {
-		const deleteRegex = new RegExp(
-			`^([\\s\\t]*)[-*+]\\s+\\[.\\]\\s+.*?${escapeRegExp(taskContent)}\\s*(\\n|$)`,
-			"m"
-		);
-		if (!deleteRegex.test(content)) return content;
-		notices.push(`Task deleted from ${noteName}`);
-		return content.replace(deleteRegex, "");
 	}
 }

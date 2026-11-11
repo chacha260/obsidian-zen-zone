@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import type ZenZonePlugin from "./main";
 import { CYCLE_COUNT } from "./constants";
+import { t } from "./i18n";
 import { MusicReference, SoundDurationKey, SoundPathKey, TimerState } from "./types";
 import { formatTime } from "./utils";
 
@@ -46,6 +47,8 @@ export class FocusSession {
 	private pausedRemainingMs: number;
 	/** True between a phase ending and the next one starting. */
 	private inTransition = false;
+	/** True while the start cue plays, before the first focus phase begins. */
+	private starting = false;
 
 	private tickTimeoutId: number | null = null;
 	private transitionTimeoutId: number | null = null;
@@ -60,7 +63,8 @@ export class FocusSession {
 	// --- State ------------------------------------------------------------
 
 	get phase(): TimerState { return this.phaseValue; }
-	get running(): boolean { return this.runningValue; }
+	/** True while counting down, and while the start cue is leading into the first phase. */
+	get running(): boolean { return this.runningValue || this.starting; }
 	get cycleCount(): number { return this.cycleValue; }
 	/** True once a session has started and has not been reset. */
 	get active(): boolean { return this.phaseValue !== TimerState.Idle; }
@@ -99,12 +103,19 @@ export class FocusSession {
 	// --- Controls ----------------------------------------------------------
 
 	toggle(): void {
-		if (this.runningValue) this.pause();
+		if (this.running) this.pause();
 		else this.start();
 	}
 
+	/** Re-reads the focus duration while idle, after the settings changed. */
+	refreshIdleDuration(): void {
+		if (this.active || this.running) return;
+		this.pausedRemainingMs = this.phaseDuration(TimerState.Focus);
+		this.emitTime();
+	}
+
 	start(): void {
-		if (this.runningValue) return;
+		if (this.running) return;
 
 		const begin = () => {
 			this.runningValue = true;
@@ -123,18 +134,32 @@ export class FocusSession {
 		};
 
 		if (this.phaseValue === TimerState.Idle) {
-			this.playSequence("soundStart", "durationStart", this.plugin.settings.workMusic[0], begin);
+			this.starting = true;
+			this.emitState();
+			this.playSequence("soundStart", "durationStart", this.plugin.settings.workMusic[0], () => {
+				this.starting = false;
+				begin();
+			});
 		} else {
 			begin();
 		}
 	}
 
 	pause(): void {
+		if (this.starting) {
+			// Still on the start cue: nothing has begun, so just call it off.
+			this.starting = false;
+			this.clearTransition();
+			this.plugin.stopLocalSound();
+			this.emitState();
+			return;
+		}
 		if (!this.runningValue) return;
 		// Reading this before stopping keeps a mid-transition pause on the next phase.
 		this.pausedRemainingMs = this.remainingMs;
 		this.stopCountdown();
 		this.clearTransition();
+		if (this.inTransition) this.plugin.stopLocalSound();
 		this.inTransition = false;
 		this.runningValue = false;
 		this.plugin.exitZenMode();
@@ -143,6 +168,7 @@ export class FocusSession {
 	}
 
 	reset(): void {
+		this.starting = false;
 		this.stopCountdown();
 		this.clearTransition();
 		this.inTransition = false;
@@ -199,7 +225,7 @@ export class FocusSession {
 
 		const overshootMs = Date.now() - this.endsAt;
 		if (overshootMs > SLEEP_OVERSHOOT_MS) {
-			new Notice(`⏰ このフェーズは約${Math.round(overshootMs / 60_000)}分前に終了していました。`);
+			new Notice(t("notice.overslept", { minutes: Math.round(overshootMs / 60_000) }));
 		}
 		this.handlePhaseComplete();
 	}
@@ -228,7 +254,7 @@ export class FocusSession {
 
 		if (this.phaseValue === TimerState.ShortBreak) {
 			this.cycleValue++;
-			this.transitionTo(TimerState.Focus, "soundShortToFocus", "durationShortToFocus", "🔔 Break is over. Back to Focus.");
+			this.transitionTo(TimerState.Focus, "soundShortToFocus", "durationShortToFocus", t("notice.breakOver"));
 			return;
 		}
 
@@ -259,7 +285,7 @@ export class FocusSession {
 			if (finishing) {
 				this.plugin.showBreakOverlay();
 				this.reset();
-				new Notice("🎉 All Cycles Complete!");
+				new Notice(t("notice.allComplete"));
 				return;
 			}
 
@@ -293,7 +319,7 @@ export class FocusSession {
 			return;
 		}
 
-		new Notice(`Waiting ${durationSec}s...`);
+		new Notice(t("notice.cueWait", { seconds: durationSec }));
 		this.clearTransition();
 		this.transitionTimeoutId = window.setTimeout(() => {
 			this.transitionTimeoutId = null;

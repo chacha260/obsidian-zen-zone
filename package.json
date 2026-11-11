@@ -1,13 +1,14 @@
 {
-	"name": "obsidian-zen-zone",
-	"version": "1.0.0",
-	"description": "A focus companion for Obsidian: pomodoro timer, YouTube ambience and daily note task logging.",
+	"name": "zen-zone",
+	"version": "1.4.0",
+	"description": "A focus companion: pomodoro timer, YouTube ambience and daily note task logging.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"lint": "eslint src --ext .ts"
+		"lint": "eslint src tests --ext .ts",
+		"test": "esbuild tests/*.test.ts --bundle --platform=node --format=cjs --outdir=.test-build --log-level=warning && node --test .test-build/*.js"
 	},
 	"keywords": [
 		"obsidian",

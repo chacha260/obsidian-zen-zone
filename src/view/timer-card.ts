@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
 import { DomListenerRegistry } from "../dom";
+import { t } from "../i18n";
 
 export interface TimerCardHandlers {
 	onToggle(): void;
@@ -23,7 +24,7 @@ export class TimerCard {
 		const card = this.parent.createDiv({ cls: "zen-card zen-timer-card" });
 
 		const metaRow = card.createDiv({ cls: "zen-timer-meta" });
-		this.statusLabelEl = metaRow.createDiv({ cls: "zen-status-label", text: "Ready" });
+		this.statusLabelEl = metaRow.createDiv({ cls: "zen-status-label", text: t("phase.ready") });
 		this.cycleIndicatorEl = metaRow.createDiv({ cls: "zen-cycle-indicator" });
 
 		this.displayEl = card.createDiv({ cls: "zen-timer-display", text: initialTime });
@@ -34,7 +35,7 @@ export class TimerCard {
 		this.setRunning(false, false);
 		this.listeners.add(this.toggleBtn, "click", () => this.handlers.onToggle());
 
-		const resetBtn = controls.createEl("button", { cls: "zen-sub-btn zen-reset-btn", text: "Reset" });
+		const resetBtn = controls.createEl("button", { cls: "zen-sub-btn zen-reset-btn", text: t("timer.reset") });
 		this.listeners.add(resetBtn, "click", () => this.handlers.onReset());
 	}
 
@@ -51,8 +52,9 @@ export class TimerCard {
 	setRunning(running: boolean, resumable: boolean): void {
 		const btn = this.toggleBtn;
 		if (!btn) return;
-		btn.setText(running ? "Stop Focus" : resumable ? "Resume Focus" : "Start Focus");
-		setIcon(btn, running ? "x" : "timer");
+		btn.empty();
+		setIcon(btn.createSpan({ cls: "zen-main-btn-icon" }), running ? "pause" : "timer");
+		btn.createSpan({ text: t(running ? "timer.pause" : resumable ? "timer.resume" : "timer.start") });
 		btn.toggleClass("is-active", running);
 	}
 

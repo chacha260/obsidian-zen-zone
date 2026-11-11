@@ -1,3 +1,4 @@
+import type { TranslationKey } from "./i18n";
 import { MusicReference, SoundDurationKey, SoundPathKey, ZenZoneSettings } from "./types";
 
 export const VIEW_TYPE_ZEN = "zen-zone-view";
@@ -22,15 +23,15 @@ export const DURATION_SETTING_KEY: Record<DurationKey, "workDuration" | "shortBr
 
 /** Sound played on each phase transition, plus how long the BGM waits for it. */
 export const SOUND_TRANSITIONS: ReadonlyArray<{
-	name: string;
+	nameKey: TranslationKey;
 	pathKey: SoundPathKey;
 	durationKey: SoundDurationKey;
 }> = [
-	{ name: "Start timer", pathKey: "soundStart", durationKey: "durationStart" },
-	{ name: "Focus → short break", pathKey: "soundFocusToShort", durationKey: "durationFocusToShort" },
-	{ name: "Short break → focus", pathKey: "soundShortToFocus", durationKey: "durationShortToFocus" },
-	{ name: "Focus → long break", pathKey: "soundFocusToLong", durationKey: "durationFocusToLong" },
-	{ name: "Long break → finish", pathKey: "soundLongToFinish", durationKey: "durationLongToFinish" }
+	{ nameKey: "settings.sound.start", pathKey: "soundStart", durationKey: "durationStart" },
+	{ nameKey: "settings.sound.focusToShort", pathKey: "soundFocusToShort", durationKey: "durationFocusToShort" },
+	{ nameKey: "settings.sound.shortToFocus", pathKey: "soundShortToFocus", durationKey: "durationShortToFocus" },
+	{ nameKey: "settings.sound.focusToLong", pathKey: "soundFocusToLong", durationKey: "durationFocusToLong" },
+	{ nameKey: "settings.sound.longToFinish", pathKey: "soundLongToFinish", durationKey: "durationLongToFinish" }
 ];
 
 const DEFAULT_MUSIC_REF: MusicReference = { trackIndex: 0, checkpointIndex: -1 };

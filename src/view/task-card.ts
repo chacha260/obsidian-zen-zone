@@ -1,6 +1,7 @@
 import { Notice, setIcon } from "obsidian";
 import type ZenZonePlugin from "../main";
 import { DomListenerRegistry, TimeoutRegistry } from "../dom";
+import { t } from "../i18n";
 import { ZenTask } from "../types";
 
 /** How long the checkbox stays ticked before the task disappears. */
@@ -58,12 +59,12 @@ export class TaskCard {
 
 	private renderFocus(): void {
 		const wrapper = this.el.createDiv({ cls: "zen-task-focus-wrapper" });
-		wrapper.createDiv({ text: "🔥 Current Focus", cls: "zen-sub-label" });
+		wrapper.createDiv({ text: t("task.current"), cls: "zen-sub-label" });
 		const display = wrapper.createDiv({ cls: "zen-task-focus-display" });
 
 		const activeTask = this.tasks[0];
 		if (!activeTask) {
-			display.createSpan({ text: "No active tasks. Great job! 🎉", cls: "zen-task-text-placeholder" });
+			display.createSpan({ text: t("task.empty"), cls: "zen-task-text-placeholder" });
 			return;
 		}
 
@@ -71,7 +72,7 @@ export class TaskCard {
 		checkbox.checked = false;
 		this.listeners.add(checkbox, "click", () => {
 			checkbox.checked = true;
-			this.completeTask(activeTask, "Task Completed! 🎉");
+			this.completeTask(activeTask, t("task.completed"));
 		});
 
 		const text = display.createSpan({ text: activeTask.content, cls: "zen-task-text-large" });
@@ -89,12 +90,12 @@ export class TaskCard {
 			type: "text",
 			placeholder: this.plugin.settings.dailyNoteTargetHeader || "Todo",
 			cls: "zen-task-add-input zen-task-header-input",
-			attr: { title: "Target header (optional)" }
+			attr: { "aria-label": t("task.headerTooltip") }
 		});
 
 		const taskInput = wrapper.createEl("input", {
 			type: "text",
-			placeholder: "Add a new task...",
+			placeholder: t("task.placeholder"),
 			cls: "zen-task-add-input"
 		});
 
@@ -116,14 +117,17 @@ export class TaskCard {
 			this.refresh();
 		};
 
-		this.listeners.add(taskInput, "keypress", (event) => {
-			if ((event as KeyboardEvent).key === "Enter") void addTask();
+		this.listeners.add(taskInput, "keydown", (event) => {
+			const key = event as KeyboardEvent;
+			// Enter also confirms an IME composition; that must not submit the task.
+			if (key.key === "Enter" && !key.isComposing) void addTask();
 		});
-		this.listeners.add(headerInput, "keypress", (event) => {
-			if ((event as KeyboardEvent).key === "Enter") taskInput.focus();
+		this.listeners.add(headerInput, "keydown", (event) => {
+			const key = event as KeyboardEvent;
+			if (key.key === "Enter" && !key.isComposing) taskInput.focus();
 		});
 
-		const addBtn = wrapper.createEl("button", { text: "+", cls: "zen-task-add-btn" });
+		const addBtn = wrapper.createEl("button", { text: "+", cls: "zen-task-add-btn", attr: { "aria-label": t("task.add") } });
 		this.listeners.add(addBtn, "click", () => void addTask());
 	}
 
@@ -202,15 +206,15 @@ export class TaskCard {
 		}
 
 		const controls = row.createDiv({ cls: "zen-task-row-controls" });
-		if (index > 0) this.addControl(controls, "up", "arrow-up", "Move up");
-		if (index < this.tasks.length - 1) this.addControl(controls, "down", "arrow-down", "Move down");
-		this.addControl(controls, "delete", "trash", "Delete", "is-danger");
+		if (index > 0) this.addControl(controls, "up", "arrow-up", t("task.moveUp"));
+		if (index < this.tasks.length - 1) this.addControl(controls, "down", "arrow-down", t("task.moveDown"));
+		this.addControl(controls, "delete", "trash", t("task.delete"), "is-danger");
 	}
 
 	private addControl(parent: HTMLElement, action: RowAction, icon: string, tooltip: string, extraClass = ""): void {
 		const btn = parent.createEl("button", { cls: `zen-task-control-btn ${extraClass}`.trim() });
 		setIcon(btn, icon);
-		btn.title = tooltip;
+		btn.ariaLabel = tooltip;
 		btn.dataset.action = action;
 	}
 

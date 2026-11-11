@@ -1,6 +1,7 @@
 import { Notice, Plugin, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { CYCLE_COUNT, DEFAULT_BREAK_REF, DEFAULT_MUSIC_REF, DEFAULT_SETTINGS, VIEW_TYPE_ZEN, createMusicSchedule } from "./constants";
 import { DailyNoteService } from "./daily-note";
+import { t } from "./i18n";
 import { FocusSession } from "./session";
 import { MusicReference, ZenZoneSettings } from "./types";
 import { ZenView } from "./view/zen-view";
@@ -22,6 +23,8 @@ export default class ZenZonePlugin extends Plugin {
 		this.dailyNotes = new DailyNoteService(this.app, () => this.settings);
 
 		this.statusBarItem = this.addStatusBarItem();
+		this.statusBarItem.addClass("mod-clickable");
+		this.registerDomEvent(this.statusBarItem, "click", () => void this.activateView());
 		this.updateStatusBar("");
 
 		this.session = new FocusSession(this);
@@ -29,17 +32,23 @@ export default class ZenZonePlugin extends Plugin {
 
 		this.addSettingTab(new ZenZoneSettingTab(this.app, this));
 		this.registerView(VIEW_TYPE_ZEN, (leaf) => new ZenView(leaf, this));
-		this.addRibbonIcon("zap", "Open Zen Zone", () => void this.activateView());
+		this.addRibbonIcon("zap", t("ribbon.open"), () => void this.activateView());
+
+		this.addCommand({
+			id: "open-panel",
+			name: t("command.open"),
+			callback: () => void this.activateView()
+		});
 
 		// The session runs without the panel, so it needs panel-free controls.
 		this.addCommand({
 			id: "toggle-focus-timer",
-			name: "Start or pause the focus timer",
+			name: t("command.toggle"),
 			callback: () => this.session.toggle()
 		});
 		this.addCommand({
 			id: "reset-focus-session",
-			name: "Reset the focus session",
+			name: t("command.reset"),
 			callback: () => this.session.reset()
 		});
 	}
@@ -68,6 +77,21 @@ export default class ZenZonePlugin extends Plugin {
 			return createMusicSchedule((value as MusicReference | undefined) ?? fallback);
 		}
 		return Array.from({ length: CYCLE_COUNT }, (_, i) => ({ ...(value[i] ?? fallback) }));
+	}
+
+	/**
+	 * Keeps the per-cycle schedules pointing at the same tracks after the track
+	 * at `removedIndex` was deleted from the playlist.
+	 */
+	repairMusicSchedules(removedIndex: number): void {
+		for (const ref of [...this.settings.workMusic, ...this.settings.breakMusic]) {
+			if (ref.trackIndex === removedIndex) {
+				ref.trackIndex = 0;
+				ref.checkpointIndex = -1;
+			} else if (ref.trackIndex > removedIndex) {
+				ref.trackIndex--;
+			}
+		}
 	}
 
 	async saveSettings(): Promise<void> {
@@ -107,18 +131,20 @@ export default class ZenZonePlugin extends Plugin {
 			this.app.workspace.rightSplit?.collapse();
 		}
 		if (this.settings.hideHeader) document.body.addClass("zen-hide-header");
-		new Notice("🧘 Focus Mode On");
+		// The status bar is part of the chrome, but not when it carries the timer.
+		if (this.settings.showStatusBarTimer) document.body.addClass("zen-keep-status-bar");
+		new Notice(t("notice.focusOn"));
 	}
 
 	exitZenMode(): void {
 		const wasActive = document.body.hasClass("zen-mode-active");
 		this.clearZenMode();
-		if (wasActive) new Notice("Focus Mode Off");
+		if (wasActive) new Notice(t("notice.focusOff"));
 	}
 
 	/** Undoes the zen-mode DOM changes without announcing it, for teardown. */
 	private clearZenMode(): void {
-		document.body.removeClasses(["zen-mode-active", "zen-hide-header"]);
+		document.body.removeClasses(["zen-mode-active", "zen-hide-header", "zen-keep-status-bar"]);
 		this.updateStatusBar("");
 	}
 
@@ -126,9 +152,9 @@ export default class ZenZonePlugin extends Plugin {
 		this.removeBreakOverlay();
 		this.overlayEl = document.body.createDiv({ cls: "zen-break-overlay" });
 		const content = this.overlayEl.createDiv({ cls: "zen-break-content" });
-		content.createEl("h1", { text: "🎉 Session Complete" });
-		content.createDiv({ text: `Great work! You've completed ${CYCLE_COUNT} cycles.` });
-		content.createEl("button", { text: "Finish" }).addEventListener("click", () => this.removeBreakOverlay());
+		content.createEl("h1", { text: t("overlay.title") });
+		content.createDiv({ text: t("overlay.body", { count: CYCLE_COUNT }) });
+		content.createEl("button", { text: t("overlay.finish") }).addEventListener("click", () => this.removeBreakOverlay());
 	}
 
 	private removeBreakOverlay(): void {
@@ -154,6 +180,13 @@ export default class ZenZonePlugin extends Plugin {
 		audio.pause();
 		audio.src = src;
 		audio.play().catch((error) => console.error("Zen Zone: failed to play sound", error));
+	}
+
+	/** Cuts off a cue that is still playing, for when its transition is cancelled. */
+	stopLocalSound(): void {
+		if (!this.cueAudio) return;
+		this.cueAudio.pause();
+		this.dropCueBuffer();
 	}
 
 	private createCueAudio(): HTMLAudioElement {

@@ -79,14 +79,9 @@ export type SoundDurationKey = {
 	[K in keyof ZenZoneSettings]: K extends `duration${string}` ? K : never;
 }[keyof ZenZoneSettings];
 
-// --- Ambient globals -----------------------------------------------------
+// --- YouTube player -----------------------------------------------------
 
-/** The subset of moment.js that Obsidian exposes and this plugin uses. */
-export interface MomentLike {
-	format(pattern?: string): string;
-}
-
-/** The subset of the YouTube IFrame Player API that this plugin uses. */
+/** The subset of the YouTube player commands that this plugin uses. */
 export interface YouTubePlayer {
 	playVideo(): void;
 	pauseVideo(): void;
@@ -119,15 +114,7 @@ export interface YouTubePlayerOptions {
 	events: {
 		onReady: () => void;
 		onStateChange: (event: YouTubePlayerEvent) => void;
+		/** Fired when the playlist, the playlist position or the video metadata changes. */
+		onInfoChange?: () => void;
 	};
-}
-
-declare global {
-	interface Window {
-		YT?: {
-			Player: new (elementId: string, options: YouTubePlayerOptions) => YouTubePlayer;
-		};
-		onYouTubeIframeAPIReady?: () => void;
-		moment: () => MomentLike;
-	}
 }

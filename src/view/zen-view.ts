@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type ZenZonePlugin from "../main";
 import { CYCLE_COUNT, VIEW_TYPE_ZEN } from "../constants";
+import { TranslationKey, t } from "../i18n";
 import type { SessionListener } from "../session";
 import { TimerState } from "../types";
 import { formatTime } from "../utils";
@@ -8,11 +9,11 @@ import { AudioCard } from "./audio-card";
 import { TaskCard } from "./task-card";
 import { TimerCard } from "./timer-card";
 
-const PHASE_LABEL: Record<TimerState, string> = {
-	[TimerState.Idle]: "Ready",
-	[TimerState.Focus]: "🔥 FOCUS",
-	[TimerState.ShortBreak]: "☕ Break (Short)",
-	[TimerState.LongBreak]: "🌴 Break (Long)"
+const PHASE_LABEL: Record<TimerState, TranslationKey> = {
+	[TimerState.Idle]: "phase.ready",
+	[TimerState.Focus]: "phase.focus",
+	[TimerState.ShortBreak]: "phase.shortBreak",
+	[TimerState.LongBreak]: "phase.longBreak"
 };
 
 /**
@@ -55,7 +56,7 @@ export class ZenView extends ItemView implements SessionListener {
 		this.audioCard = new AudioCard(container.createDiv(), this.plugin);
 		this.audioCard.render();
 
-		container.createDiv({ text: "Cycle & Music settings in plugin options.", cls: "zen-footer-note" });
+		container.createDiv({ text: t("view.footer"), cls: "zen-footer-note" });
 
 		session.attach(this, this.audioCard);
 	}
@@ -85,8 +86,9 @@ export class ZenView extends ItemView implements SessionListener {
 
 		this.timerCard?.setRunning(running, active);
 
-		const label = !active ? PHASE_LABEL[TimerState.Idle] : running ? PHASE_LABEL[phase] : `⏸ ${PHASE_LABEL[phase]}`;
+		const phaseLabel = t(PHASE_LABEL[active ? phase : TimerState.Idle]);
+		const label = active && !running ? `⏸ ${phaseLabel}` : phaseLabel;
 		const current = active ? Math.min(cycleCount + 1, CYCLE_COUNT) : 0;
-		this.timerCard?.setStatus(label, `Cycle: ${current}/${CYCLE_COUNT}`);
+		this.timerCard?.setStatus(label, t("timer.cycle", { current, total: CYCLE_COUNT }));
 	}
 }

@@ -2,6 +2,7 @@ import { Notice, setIcon } from "obsidian";
 import type ZenZonePlugin from "../main";
 import { YouTubeAudio } from "../audio/youtube-audio";
 import { DomListenerRegistry, TimeoutRegistry } from "../dom";
+import { TranslationKey, t } from "../i18n";
 import type { SessionAudio } from "../session";
 import { Checkpoint, MusicReference, PlaylistItem, RepeatMode, YouTubeInfo } from "../types";
 import { extractYouTubeInfo, parseTimeString } from "../utils";
@@ -14,6 +15,12 @@ const PLAY_AFTER_LOAD_MS = 800;
 const SHUFFLE_AFTER_LOAD_MS = 500;
 /** Let the player drain its buffers before it is torn down. */
 const DRAIN_BEFORE_DESTROY_MS = 1000;
+
+const REPEAT_LABEL: Record<RepeatMode, TranslationKey> = {
+	[RepeatMode.Off]: "audio.repeatOff",
+	[RepeatMode.All]: "audio.repeatAll",
+	[RepeatMode.One]: "audio.repeatOne"
+};
 
 /** Where playback should pick up after the player was released or replaced. */
 interface ResumePoint extends YouTubeInfo {
@@ -80,7 +87,7 @@ export class AudioCard implements SessionAudio {
 
 	private renderTrackSelect(card: HTMLElement): void {
 		const wrapper = card.createDiv({ cls: "zen-input-group" });
-		wrapper.createDiv({ cls: "zen-label", text: "Manual Select" });
+		wrapper.createDiv({ cls: "zen-label", text: t("audio.track") });
 
 		const selectEl = wrapper.createEl("select", { cls: "zen-select" });
 		this.selectEl = selectEl;
@@ -124,12 +131,13 @@ export class AudioCard implements SessionAudio {
 
 		this.playBtnEl = row.createEl("button", { cls: "zen-music-btn" });
 		setIcon(this.playBtnEl, "play");
+		this.playBtnEl.ariaLabel = t("audio.play");
 		this.listeners.add(this.playBtnEl, "click", () => this.toggle());
 
-		this.addSmallButton(row, "skip-back", "Previous (playlist)", () => this.player?.previousVideo());
-		this.addSmallButton(row, "skip-forward", "Next (playlist)", () => this.player?.nextVideo());
+		this.addSmallButton(row, "skip-back", t("audio.previous"), () => this.player?.previousVideo());
+		this.addSmallButton(row, "skip-forward", t("audio.next"), () => this.player?.nextVideo());
 
-		const shuffleBtn = this.addSmallButton(row, "shuffle", "Shuffle (playlist)", () => {
+		const shuffleBtn = this.addSmallButton(row, "shuffle", t("audio.shuffle"), () => {
 			this.shuffle = !this.shuffle;
 			shuffleBtn.toggleClass("is-active", this.shuffle);
 			this.player?.setShuffle(this.shuffle);
@@ -150,7 +158,7 @@ export class AudioCard implements SessionAudio {
 	private addSmallButton(row: HTMLElement, icon: string, tooltip: string, onClick: () => void): HTMLButtonElement {
 		const btn = row.createEl("button", { cls: "zen-music-btn-small" });
 		setIcon(btn, icon);
-		btn.title = tooltip;
+		btn.ariaLabel = tooltip;
 		this.listeners.add(btn, "click", onClick);
 		return btn;
 	}
@@ -162,7 +170,7 @@ export class AudioCard implements SessionAudio {
 		const slider = wrapper.createEl("input", {
 			type: "range",
 			cls: "zen-slider",
-			attr: { min: "0", max: "1", step: "0.05", value: this.volume.toString() }
+			attr: { min: "0", max: "1", step: "0.05", value: this.volume.toString(), "aria-label": t("audio.volume") }
 		});
 		this.listeners.add(slider, "input", (event) => {
 			this.volume = parseFloat((event.target as HTMLInputElement).value);
@@ -177,7 +185,7 @@ export class AudioCard implements SessionAudio {
 		container.empty();
 		if (checkpoints.length === 0) return;
 
-		container.createDiv({ cls: "zen-sub-label", text: "Quick Jump" });
+		container.createDiv({ cls: "zen-sub-label", text: t("audio.quickJump") });
 		const grid = container.createDiv({ cls: "zen-chip-grid" });
 		for (const checkpoint of checkpoints) {
 			const chip = grid.createEl("button", { cls: "zen-chip", text: checkpoint.label });
@@ -186,14 +194,14 @@ export class AudioCard implements SessionAudio {
 				const player = this.ensurePlayer(seconds);
 				if (!player) return;
 				if (player.isPlayerReady()) player.seekTo(seconds);
-				new Notice(`⏩ Jumped to ${checkpoint.label}`);
+				new Notice(t("audio.jumped", { label: checkpoint.label }));
 				if (!this.playing) this.startPlayback(false);
 			});
 		}
 	}
 
 	private updateNowPlaying(index: number, total: number, title: string): void {
-		this.playlistOrderEl?.setText(total > 0 ? `Video ${index + 1} / ${total}` : "");
+		this.playlistOrderEl?.setText(total > 0 ? t("audio.position", { index: index + 1, total }) : "");
 		if (!this.videoTitleEl) return;
 		this.videoTitleEl.setText(title);
 		this.videoTitleEl.toggleClass("is-visible", Boolean(title));
@@ -202,13 +210,13 @@ export class AudioCard implements SessionAudio {
 	private nextRepeatMode(): RepeatMode {
 		switch (this.repeatMode) {
 			case RepeatMode.Off:
-				new Notice("🔁 Repeat: All");
+				new Notice(`🔁 ${t("audio.repeatAll")}`);
 				return RepeatMode.All;
 			case RepeatMode.All:
-				new Notice("🔂 Repeat: One");
+				new Notice(`🔂 ${t("audio.repeatOne")}`);
 				return RepeatMode.One;
 			default:
-				new Notice("Repeat: Off");
+				new Notice(t("audio.repeatOff"));
 				return RepeatMode.Off;
 		}
 	}
@@ -216,7 +224,7 @@ export class AudioCard implements SessionAudio {
 	private updateRepeatButton(btn: HTMLElement): void {
 		setIcon(btn, this.repeatMode === RepeatMode.One ? "repeat-1" : "repeat");
 		btn.toggleClass("is-active", this.repeatMode !== RepeatMode.Off);
-		btn.title = `Repeat: ${RepeatMode[this.repeatMode]}`;
+		btn.ariaLabel = t(REPEAT_LABEL[this.repeatMode]);
 	}
 
 	// --- Player lifetime -------------------------------------------------
@@ -344,7 +352,7 @@ export class AudioCard implements SessionAudio {
 			if (checkpoint) {
 				this.player.seekTo(startAt);
 				if (autoPlay) this.player.play();
-				new Notice(`⏩ Jumped to ${checkpoint.label}`);
+				new Notice(t("audio.jumped", { label: checkpoint.label }));
 			} else if (autoPlay) {
 				this.player.play();
 			}
@@ -357,11 +365,11 @@ export class AudioCard implements SessionAudio {
 			this.timeouts.set(() => {
 				this.player?.seekTo(startAt);
 				if (autoPlay) this.player?.play();
-				new Notice(`🎵 Loaded: ${track.title} (${checkpoint.label})`);
+				new Notice(t("audio.loaded", { title: `${track.title} (${checkpoint.label})` }));
 			}, SEEK_AFTER_LOAD_MS);
 		} else {
 			if (autoPlay) this.timeouts.set(() => this.player?.play(), PLAY_AFTER_LOAD_MS);
-			new Notice(`🎵 Loaded: ${track.title}`);
+			new Notice(t("audio.loaded", { title: track.title }));
 		}
 
 		this.renderCheckpoints(track.checkpoints ?? []);

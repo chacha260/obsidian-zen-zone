@@ -1,7 +1,7 @@
 {
-	"id": "obsidian-zen-zone",
-	"name": "ob-zen-zone",
-	"version": "1.0.0",
+	"id": "zen-zone",
+	"name": "Zen Zone",
+	"version": "1.4.0",
 	"minAppVersion": "1.5.0",
 	"description": "A focus companion: a pomodoro timer with per-cycle YouTube ambience, quick-jump checkpoints and daily note task logging.",
 	"author": "chacha260",

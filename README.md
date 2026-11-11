@@ -4,7 +4,7 @@
 
 **Focus. Flow. Breathe.**
 <br>
-A scientifically designed focus companion for your Obsidian workspace.
+A focus companion for your Obsidian workspace: pomodoro timer, YouTube ambience and daily note task logging.
 
 [![Release](https://img.shields.io/github/v/release/chacha260/obsidian-zen-zone?style=flat-square&color=8A2BE2)](https://github.com/chacha260/obsidian-zen-zone/releases)
 [![Downloads](https://img.shields.io/github/downloads/chacha260/obsidian-zen-zone/total?style=flat-square&color=success)](https://github.com/chacha260/obsidian-zen-zone/releases)
@@ -18,105 +18,118 @@ A scientifically designed focus companion for your Obsidian workspace.
 
 ---
 
-## 🧠 Concept: Engineered for Flow
+## What it does
 
-**Zen Zone** is not just a timer or a music player. It is a **UX Psychology-driven tool** designed to reduce cognitive load and induce the "Flow State" (Zone).
+**Zen Zone** puts a pomodoro timer, an ambient music player and a short task list into one side panel. The timer and the music are independent: run either one alone, or let the timer switch the music for you at every phase.
 
-By decoupling time management from environmental control, it respects your autonomy and helps you construct the perfect mental environment for deep work within Obsidian.
+## Features
 
-## ✨ Key Features
+### 🍅 Focus timer
 
-### 1. 🍅 Focus Timer (Zen Mode)
-Activate **Zen Mode** to eliminate distractions.
-- **Distraction-free:** Hides sidebars and status bars automatically.
-- **Visual Clarity:** Large, tabular-numeral display for instant recognition.
-- **Full Pomodoro Cycle:** Four focus blocks with short breaks, closing on a long break.
-- **Runs Without the Panel:** The session lives in the plugin, not the view. Close the Zen panel and the countdown keeps going in the status bar; drive it from the command palette with *Start or pause the focus timer*.
-- **Sleep-Proof:** The countdown tracks an absolute deadline, so it neither drifts nor stalls when your machine sleeps.
-- **Completion Loop:** A "Session Complete" overlay utilizes the *Zeigarnik Effect* to provide closure and a moment to breathe.
+- **Full pomodoro run:** four focus blocks with short breaks, closing on a long break. Durations are configurable.
+- **Zen mode:** while the timer runs, the sidebars can collapse and the ribbon, tab headers and view headers can be hidden.
+- **Runs without the panel:** the session belongs to the plugin, not the view. Close the panel and the countdown continues in the status bar; select the status bar timer to bring the panel back.
+- **Sleep-proof:** the countdown tracks an absolute deadline, so it neither drifts nor stalls when your machine sleeps.
+- **Transition sounds:** play an audio file from your vault at each phase change, with a configurable pause before the music resumes.
 
-### 2. 🎧 Ambient Audio Engine
-Seamlessly integrate YouTube ambiances (Lofi, Jazz, Nature sounds) without leaving your notes.
-- **Invisible Player:** Audio plays in the background. No ads, no distractions.
-- **Decoupled Control:** Play music without the timer, or run the timer in silence. You have full control.
-- **Transport Controls:** Skip, shuffle and repeat (off / all / one) across a whole YouTube playlist.
-- **Per-Cycle Scheduling:** Give each of the four cycles its own focus and break track.
-- **Lazy & Self-Releasing:** The YouTube player is created on your first play, never before, and is torn down again after a configurable stretch of silence — resuming from the same position when you come back. A silent focus session costs nothing.
-- **Volume Mixer:** Independent volume control separate from your system audio.
+### 🎧 Ambient audio
 
-### 3. 🔖 Smart Checkpoints
-Don't waste willpower searching for "the good part" of a track.
-- **Quick Jump:** Define timestamps (e.g., "Bass Drop", "Morning Mood") in settings.
-- **One-Tap Access:** Switch moods instantly with large, Fitts's Law-compliant buttons.
+- **Background playback:** YouTube videos and playlists play through a hidden player.
+- **Transport controls:** skip, shuffle and repeat (off / all / one) across a playlist, with an independent volume slider.
+- **Per-cycle scheduling:** give each of the four cycles its own focus and break track.
+- **Checkpoints:** name timestamps inside a track ("Morning", "Night") and jump to them with one tap.
+- **Lazy and self-releasing:** the player is created on your first play, never before, and is discarded after a configurable stretch of silence. Playback resumes from the same position.
 
-### 4. ⚙️ GUI Playlist Manager
-- **No JSON Editing:** A clean, modal-based interface to manage your favorite tracks.
-- **Cognitive Ease:** Visual hierarchy helps you organize titles, URLs, and checkpoints effortlessly.
+Music plays from the panel, so it stops when the panel is closed. The timer keeps running.
 
-### 5. ✅ Tasks & Daily Note Logging
-Keep the one thing you are working on in front of you.
-- **Current Focus:** The top task is pinned above the list, so intent survives the session.
-- **Reorderable Backlog:** Drag and drop, or nudge tasks up and down.
-- **Daily Note Sync:** Adding a task appends a checkbox to today's daily note; completing it stamps the time. Uses your Daily Notes template when one is configured.
+### ✅ Tasks and daily note logging
+
+- **Current focus:** the top task is pinned above the list.
+- **Reorderable backlog:** drag and drop, or move tasks up and down.
+- **Daily note logging (optional):** adding a task appends a checkbox under a heading in today's daily note; completing it stamps the time; deleting it removes the line. A new daily note uses your Daily notes template when one is configured.
+
+### 🌐 Languages
+
+The interface follows Obsidian's language. English and Japanese are included.
 
 ---
 
-## 🎨 Design Philosophy
+## Commands
 
-This plugin was refactored by a **UX Psychology Architect** based on the following principles:
+| Command | What it does |
+|:---|:---|
+| **Zen Zone: Open panel** | Opens the side panel. |
+| **Zen Zone: Start or pause the focus timer** | Starts, pauses or resumes the session. |
+| **Zen Zone: Reset the focus session** | Returns to the first cycle. |
 
-> **Gestalt Principles (Common Region)**
-> Controls are grouped into distinct cards ("Timer" vs "Audio") to help your brain process information faster.
-
-> **Von Restorff Effect**
-> The primary action ("Start Focus") is visually isolated and emphasized, reducing decision fatigue.
-
-> **Fitts's Law**
-> Interactive elements like checkpoints have expanded clickable areas, making interaction fluid and error-free.
+No hotkeys are assigned by default. Set your own in **Settings → Hotkeys**.
 
 ---
 
-## 🚀 Getting Started
+## Network use and privacy
 
-**Requires Obsidian 1.5.0 or newer.**
-
-1. **Install:** Download `main.js`, `manifest.json`, and `styles.css` into your `.obsidian/plugins/zen-zone/` folder.
-2. **Enable:** Turn on **Zen Zone** in Obsidian Community Plugins settings.
-3. **Open:** Click the ⚡ (Zap) icon in the ribbon to open the Zen Zone view.
-4. **Configure:** Go to settings to add your favorite YouTube ambience tracks.
-
-## 📸 Screenshots
-
-| Focus Mode | Settings GUI |
-|:---:|:---:|
-| *[Insert Image of Zen View]* | *[Insert Image of Settings Modal]* |
-| Clean interface for deep work. | Easy playlist management. |
+- **YouTube:** music is streamed by embedding YouTube's player (`https://www.youtube.com/embed/…`) in a hidden frame. This is the only network access the plugin makes. Nothing is requested until you start playback, and nothing is requested at all if you only use the timer and tasks.
+- When the player is active, YouTube receives what any embedded YouTube video receives: your IP address, the video or playlist being played, and YouTube's own cookies. YouTube's terms and privacy policy apply, and YouTube may show ads according to its own rules.
+- The plugin loads no remote scripts into Obsidian. It controls the embedded player by messaging its frame.
+- No telemetry, no analytics, no account. Your notes and tasks never leave your vault.
+- The plugin writes only to its own settings and, when daily note logging is enabled, to your daily notes.
 
 ---
 
+## Getting started
+
+**Requires Obsidian 1.5.0 or newer.** Works on desktop and mobile; the status bar timer is desktop only because mobile has no status bar.
+
+### Manual installation
+
+1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/chacha260/obsidian-zen-zone/releases).
+2. Copy them into `<Vault>/.obsidian/plugins/zen-zone/`.
+3. Reload Obsidian and enable **Zen Zone** in **Settings → Community plugins**.
+
+### First steps
+
+1. Select the ⚡ icon in the ribbon to open the panel.
+2. Open **Settings → Zen Zone** and add your tracks under **Playlist**. Paste a YouTube video URL or a playlist URL (one that contains `list=`).
+3. Choose the music for each cycle under **Cycle music**.
+4. Select **Start focus**.
+
 ---
 
-## 🛠 Development
+## Development
 
 ```bash
 npm install
 npm run dev     # esbuild in watch mode -> main.js
 npm run build   # type-check, then a production bundle
+npm run lint
+npm test
 ```
 
 The plugin is bundled from `src/`:
 
 | Path | Responsibility |
 |:---|:---|
-| `src/main.ts` | Plugin entry: settings, view registration, zen mode, status bar |
+| `src/main.ts` | Plugin entry: settings, view registration, commands, zen mode, status bar |
 | `src/session.ts` | The pomodoro state machine, owned by the plugin so it outlives the panel |
-| `src/constants.ts`, `src/types.ts`, `src/utils.ts` | Defaults, shared types and pure helpers |
-| `src/daily-note.ts` | Reading and rewriting task lines in the daily note |
-| `src/audio/youtube-audio.ts` | The hidden YouTube IFrame player |
+| `src/i18n.ts` | Interface strings (English and Japanese) |
+| `src/constants.ts`, `src/types.ts`, `src/utils.ts`, `src/moment.ts`, `src/dom.ts` | Defaults, shared types and helpers |
+| `src/daily-note.ts`, `src/task-lines.ts` | Daily note access, and the pure line edits behind it |
+| `src/audio/` | The hidden YouTube player and the message protocol that drives it |
 | `src/view/` | The side panel: `zen-view` plus the task, timer and audio cards |
 | `src/settings/` | Settings tab and the track editor modal |
+| `tests/` | Unit tests for the pure modules |
 
 All styling lives in `styles.css` so themes can override it.
+
+### Releasing
+
+1. Run `npm version <new version>`; this updates `manifest.json` and `versions.json`.
+2. Push the commit and the tag (the tag is the bare version, with no leading `v`).
+3. The release workflow builds the plugin and opens a draft release with `main.js`, `manifest.json` and `styles.css` attached. Review and publish it.
+
+## License
+
+[MIT](LICENSE)
 
 <div align="center">
 

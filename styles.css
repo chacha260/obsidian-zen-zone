@@ -307,8 +307,11 @@
 	overflow: hidden;
 }
 
-.yt-player-wrapper {
-	display: none;
+/* Kept in the layout at zero size: a display:none iframe may not play. */
+.yt-player-wrapper iframe {
+	width: 0;
+	height: 0;
+	border: 0;
 }
 
 .zen-audio-top-controls {
@@ -523,7 +526,7 @@
 
 /* --- Zen Mode Overrides --- */
 body.zen-mode-active.zen-hide-header .workspace-ribbon,
-body.zen-mode-active.zen-hide-header .status-bar,
+body.zen-mode-active.zen-hide-header:not(.zen-keep-status-bar) .status-bar,
 body.zen-mode-active.zen-hide-header .app-header,
 body.zen-mode-active.zen-hide-header .view-header,
 body.zen-mode-active.zen-hide-header .workspace-tab-header-container {

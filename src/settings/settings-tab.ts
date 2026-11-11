@@ -7,14 +7,15 @@ import {
 	SOUND_TRANSITIONS,
 	TIME_CONSTRAINTS
 } from "../constants";
+import { TranslationKey, t } from "../i18n";
 import { MusicReference, SoundPathKey } from "../types";
 import { clamp } from "../utils";
 import { TrackEditorModal } from "./track-editor-modal";
 
-const DURATION_LABEL: Record<DurationKey, string> = {
-	work: "作業時間 (Focus)",
-	shortBreak: "小休憩 (Short Break)",
-	longBreak: "大休憩 (Long Break)"
+const DURATION_LABEL: Record<DurationKey, TranslationKey> = {
+	work: "settings.timer.work",
+	shortBreak: "settings.timer.shortBreak",
+	longBreak: "settings.timer.longBreak"
 };
 
 /** Upper bound of the idle-release slider, in minutes. */
@@ -52,18 +53,13 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	// --- General ---------------------------------------------------------
 
 	private addGeneralSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("⚙️ General").setHeading();
-
-		this.addToggle(containerEl, "Auto-collapse sidebars", "作業開始時にサイドバー(左右)を自動で閉じる", "autoCollapseSidebars");
-		this.addToggle(containerEl, "Hide header & UI elements", "作業開始時に上部のヘッダーやリボン等を非表示にする", "hideHeader");
-		this.addToggle(containerEl, "Show timer in status bar", "ステータスバーに残り時間を表示する。パネルを閉じてもセッションは続きます。", "showStatusBarTimer");
+		this.addToggle(containerEl, t("settings.collapse.name"), t("settings.collapse.desc"), "autoCollapseSidebars");
+		this.addToggle(containerEl, t("settings.hideHeader.name"), t("settings.hideHeader.desc"), "hideHeader");
+		this.addToggle(containerEl, t("settings.statusBar.name"), t("settings.statusBar.desc"), "showStatusBarTimer");
 
 		new Setting(containerEl)
-			.setName("Release audio engine when idle")
-			.setDesc(
-				"無音がこの分数続いたらYouTubeプレイヤーを破棄してメモリを解放します。" +
-					"次の再生で同じ位置から自動的に復帰します。0で無効。"
-			)
+			.setName(t("settings.idleRelease.name"))
+			.setDesc(t("settings.idleRelease.desc"))
 			.addSlider((slider) =>
 				slider
 					.setLimits(0, MAX_IDLE_RELEASE_MINUTES, 1)
@@ -98,21 +94,21 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	// --- Daily note ------------------------------------------------------
 
 	private addDailyNoteSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("📝 Daily note logging").setHeading();
+		new Setting(containerEl).setName(t("settings.daily.heading")).setHeading();
 
 		this.addToggle(
 			containerEl,
-			"Enable auto-log",
-			"タスク作成時にDaily Noteへ追記し、完了時に時間を記録する",
+			t("settings.daily.enable.name"),
+			t("settings.daily.enable.desc"),
 			"autoLogToDaily",
 			true
 		);
 
 		if (!this.plugin.settings.autoLogToDaily) return;
 
-		this.addTextSetting(containerEl, "Daily note folder", "Daily Noteの保存フォルダ (例: DailyNotes)。空欄はルート。", "DailyNotes", "dailyNoteFolder");
-		this.addTextSetting(containerEl, "Date format", "ファイル名の日付形式 (例: YYYY-MM-DD)", "YYYY-MM-DD", "dailyNoteFormat");
-		this.addTextSetting(containerEl, "Default target header", "タスクを追加するデフォルトの見出し名", "Todo", "dailyNoteTargetHeader");
+		this.addTextSetting(containerEl, t("settings.daily.folder.name"), t("settings.daily.folder.desc"), "DailyNotes", "dailyNoteFolder");
+		this.addTextSetting(containerEl, t("settings.daily.format.name"), t("settings.daily.format.desc"), "YYYY-MM-DD", "dailyNoteFormat");
+		this.addTextSetting(containerEl, t("settings.daily.header.name"), t("settings.daily.header.desc"), "Todo", "dailyNoteTargetHeader");
 	}
 
 	private addTextSetting(
@@ -130,7 +126,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 					.setPlaceholder(placeholder)
 					.setValue(this.plugin.settings[key])
 					.onChange(async (value) => {
-						this.plugin.settings[key] = value;
+						this.plugin.settings[key] = value.trim();
 						await this.plugin.saveSettings();
 					})
 			);
@@ -139,7 +135,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	// --- Timer -----------------------------------------------------------
 
 	private addTimerSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("⏱ Timer configuration").setHeading();
+		new Setting(containerEl).setName(t("settings.timer.heading")).setHeading();
 
 		for (const key of Object.keys(TIME_CONSTRAINTS) as DurationKey[]) {
 			this.addDurationSetting(containerEl, key);
@@ -147,7 +143,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 
 		const footer = containerEl.createDiv({ cls: "zen-setting-apply-container" });
 		new ButtonComponent(footer)
-			.setButtonText("設定を保存・反映")
+			.setButtonText(t("settings.timer.apply"))
 			.setCta()
 			.onClick(() => void this.saveDurations());
 	}
@@ -155,8 +151,8 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	private addDurationSetting(containerEl: HTMLElement, key: DurationKey): void {
 		const limits = TIME_CONSTRAINTS[key];
 		const setting = new Setting(containerEl)
-			.setName(DURATION_LABEL[key])
-			.setDesc(`基本: ${limits.default}分 | 範囲: ${limits.min} - ${limits.max}分`);
+			.setName(t(DURATION_LABEL[key]))
+			.setDesc(t("settings.timer.range", limits));
 
 		let numberInput: HTMLInputElement | null = null;
 		let sliderInput: HTMLInputElement | null = null;
@@ -193,28 +189,29 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 		}
 		await this.plugin.saveSettings();
 		this.resetDraftDurations();
+		this.plugin.session.refreshIdleDuration();
 		this.display();
-		new Notice("Time settings saved!");
+		new Notice(t("settings.timer.saved"));
 	}
 
 	// --- Transition sounds -----------------------------------------------
 
 	private addSoundSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("🔊 Sound effects").setHeading();
+		new Setting(containerEl).setName(t("settings.sound.heading")).setHeading();
 		containerEl.createDiv({
 			cls: "setting-item-description",
-			text: "Vault内の音声ファイルのパス(例: Assets/start.m4a)と、BGMを待機させる時間(秒)を指定してください。▶ で試聴できます。"
+			text: t("settings.sound.desc")
 		});
 
-		for (const { name, pathKey, durationKey } of SOUND_TRANSITIONS) {
+		for (const { nameKey, pathKey, durationKey } of SOUND_TRANSITIONS) {
 			new Setting(containerEl)
-				.setName(name)
+				.setName(t(nameKey))
 				.addText((text) => {
 					const markValidity = () => this.markPathValidity(text.inputEl, this.plugin.settings[pathKey]);
-					text.setPlaceholder("File path")
+					text.setPlaceholder(t("settings.sound.pathPlaceholder"))
 						.setValue(this.plugin.settings[pathKey])
 						.onChange(async (value) => {
-							this.plugin.settings[pathKey] = value;
+							this.plugin.settings[pathKey] = value.trim();
 							await this.plugin.saveSettings();
 							markValidity();
 						});
@@ -223,17 +220,17 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 				.addText((text) => {
 					text.inputEl.type = "number";
 					text.inputEl.addClass("zen-duration-input");
-					text.setPlaceholder("Sec")
+					text.setPlaceholder(t("settings.sound.secondsPlaceholder"))
 						.setValue(this.plugin.settings[durationKey].toString())
 						.onChange(async (value) => {
-							this.plugin.settings[durationKey] = parseInt(value, 10) || 0;
+							this.plugin.settings[durationKey] = Math.max(0, parseInt(value, 10) || 0);
 							await this.plugin.saveSettings();
 						});
 				})
 				.addExtraButton((btn) =>
 					btn
 						.setIcon("play")
-						.setTooltip("Preview this sound")
+						.setTooltip(t("settings.sound.preview"))
 						.onClick(() => this.previewSound(pathKey))
 				);
 		}
@@ -247,11 +244,11 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	private previewSound(pathKey: SoundPathKey): void {
 		const path = this.plugin.settings[pathKey];
 		if (!path) {
-			new Notice("先にファイルパスを入力してください。");
+			new Notice(t("settings.sound.needPath"));
 			return;
 		}
 		if (!this.plugin.resolveSoundSrc(path)) {
-			new Notice(`ファイルが見つかりません: ${path}`);
+			new Notice(t("settings.sound.missing", { path }));
 			return;
 		}
 		this.plugin.playLocalSound(path);
@@ -260,17 +257,18 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	// --- Per-cycle music -------------------------------------------------
 
 	private addCycleMusicSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("🎵 Cycle music schedule").setHeading();
+		new Setting(containerEl).setName(t("settings.music.heading")).setHeading();
 		containerEl.createDiv({
 			cls: "setting-item-description",
-			text: `Configure different music for each of the ${CYCLE_COUNT} cycles.`
+			text: t("settings.music.desc", { count: CYCLE_COUNT })
 		});
 
 		for (let cycle = 0; cycle < CYCLE_COUNT; cycle++) {
 			const isLast = cycle === CYCLE_COUNT - 1;
-			new Setting(containerEl).setName(`Cycle ${cycle + 1}`).setHeading();
-			this.addMusicSetting(containerEl, "Focus music", this.plugin.settings.workMusic[cycle]);
-			this.addMusicSetting(containerEl, `Break music (${isLast ? "long" : "short"})`, this.plugin.settings.breakMusic[cycle]);
+			const cycleName = t("settings.music.cycle", { number: cycle + 1 });
+			const breakName = t(isLast ? "settings.music.longBreak" : "settings.music.shortBreak");
+			this.addMusicSetting(containerEl, `${cycleName}: ${t("settings.music.focus")}`, this.plugin.settings.workMusic[cycle]);
+			this.addMusicSetting(containerEl, `${cycleName}: ${breakName}`, this.plugin.settings.breakMusic[cycle]);
 		}
 	}
 
@@ -302,7 +300,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 
 	private fillCheckpointOptions(dropdown: DropdownComponent, ref: MusicReference): void {
 		dropdown.selectEl.empty();
-		dropdown.addOption("-1", "Start");
+		dropdown.addOption("-1", t("settings.music.fromStart"));
 		const track = this.plugin.settings.playlistData[ref.trackIndex];
 		track?.checkpoints?.forEach((cp, index) => dropdown.addOption(index.toString(), `${cp.label} (${cp.time})`));
 		dropdown.setValue(ref.checkpointIndex.toString());
@@ -311,14 +309,14 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	// --- Playlist --------------------------------------------------------
 
 	private addPlaylistSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Playlist manager").setHeading();
+		new Setting(containerEl).setName(t("settings.playlist.heading")).setDesc(t("settings.playlist.desc")).setHeading();
 
 		this.plugin.settings.playlistData.forEach((track, index) => {
 			new Setting(containerEl)
 				.setName(track.title)
 				.setDesc(track.url)
 				.addButton((btn) =>
-					btn.setIcon("pencil").onClick(() => {
+					btn.setIcon("pencil").setTooltip(t("settings.playlist.edit")).onClick(() => {
 						new TrackEditorModal(this.app, track, async (updated) => {
 							this.plugin.settings.playlistData[index] = updated;
 							await this.plugin.saveSettings();
@@ -329,19 +327,21 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 				.addButton((btn) =>
 					btn
 						.setIcon("trash")
+						.setTooltip(t("settings.playlist.delete"))
 						.setClass("zen-danger-btn")
 						.onClick(async () => {
 							this.plugin.settings.playlistData.splice(index, 1);
+							this.plugin.repairMusicSchedules(index);
 							await this.plugin.saveSettings();
 							this.display();
-							new Notice("Track deleted.");
+							new Notice(t("settings.playlist.deleted"));
 						})
 				);
 		});
 
 		const footer = containerEl.createDiv({ cls: "zen-setting-add-container" });
 		new ButtonComponent(footer)
-			.setButtonText("Add new track")
+			.setButtonText(t("settings.playlist.add"))
 			.setCta()
 			.onClick(() => {
 				new TrackEditorModal(this.app, null, async (track) => {
