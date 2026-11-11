@@ -123,6 +123,22 @@ export default class ZenZonePlugin extends Plugin {
 		}
 	}
 
+	/** Moves a playlist track, keeping the per-cycle schedules on the tracks they pointed at. */
+	moveTrack(oldIndex: number, newIndex: number): void {
+		const playlist = this.settings.playlistData;
+		if (oldIndex === newIndex || !playlist[oldIndex] || newIndex < 0 || newIndex >= playlist.length) return;
+
+		const order = playlist.map((_, index) => index);
+		const [moved] = order.splice(oldIndex, 1);
+		order.splice(newIndex, 0, moved);
+
+		this.settings.playlistData = order.map((index) => playlist[index]);
+		for (const ref of [...this.settings.workMusic, ...this.settings.breakMusic]) {
+			const position = order.indexOf(ref.trackIndex);
+			if (position >= 0) ref.trackIndex = position;
+		}
+	}
+
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 	}
