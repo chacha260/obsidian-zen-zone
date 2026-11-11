@@ -1,0 +1,62 @@
+name: Release
+
+# Builds the plugin and publishes a GitHub release that carries the files
+# Obsidian installs: main.js, manifest.json and styles.css.
+#
+# Two ways to start it:
+#   - push a tag equal to the version in manifest.json (no leading "v"), or
+#   - run it by hand from the Actions tab; it then tags the selected branch
+#     with the version found in manifest.json.
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: Create the release as a draft to review before publishing
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+      - name: Resolve the version
+        id: version
+        run: |
+          version="$(node -p "require('./manifest.json').version")"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DRAFT: ${{ inputs.draft && '--draft' || '' }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists. Bump the version first (npm version <new version>)." >&2
+            exit 1
+          fi
+          gh release create "$VERSION" $DRAFT \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --generate-notes \
+            main.js manifest.json styles.css

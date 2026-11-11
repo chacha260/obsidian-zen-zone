@@ -1,53 +1,68 @@
 import { Notice, Plugin, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
-import { CYCLE_COUNT, DEFAULT_BREAK_REF, DEFAULT_MUSIC_REF, DEFAULT_SETTINGS, VIEW_TYPE_ZEN, createMusicSchedule } from "./constants";
+import { AudioEngine } from "./audio/engine";
+import {
+	DEFAULT_BREAK_REF,
+	DEFAULT_MUSIC_REF,
+	DEFAULT_SETTINGS,
+	HISTORY_DAYS,
+	MAX_CYCLES,
+	VIEW_TYPE_ZEN
+} from "./constants";
 import { DailyNoteService } from "./daily-note";
+import { t } from "./i18n";
+import { formatClock, now } from "./moment";
 import { FocusSession } from "./session";
-import { MusicReference, ZenZoneSettings } from "./types";
+import { DayStats, MusicReference, ZenZoneSettings } from "./types";
+import { clamp } from "./utils";
 import { ZenView } from "./view/zen-view";
 import { ZenZoneSettingTab } from "./settings/settings-tab";
 
 export default class ZenZonePlugin extends Plugin {
 	settings!: ZenZoneSettings;
 	dailyNotes!: DailyNoteService;
+	/** Owned here rather than by the view, so music outlives the Zen panel. */
+	audio!: AudioEngine;
 	/** Owned here rather than by the view, so a session outlives the Zen panel. */
 	session!: FocusSession;
 
 	private statusBarItem: HTMLElement | null = null;
-	private overlayEl: HTMLElement | null = null;
 	/** One reused element for every transition cue, instead of one per playback. */
 	private cueAudio: HTMLAudioElement | null = null;
+	/** Sidebars this plugin collapsed for zen mode, to be reopened afterwards. */
+	private collapsedSides: Array<"left" | "right"> = [];
+	private readonly dataListeners = new Set<() => void>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		this.dailyNotes = new DailyNoteService(this.app, () => this.settings);
 
 		this.statusBarItem = this.addStatusBarItem();
+		this.statusBarItem.addClass("mod-clickable");
+		this.registerDomEvent(this.statusBarItem, "click", () => void this.activateView());
 		this.updateStatusBar("");
 
-		this.session = new FocusSession(this);
+		this.audio = new AudioEngine(this);
+		this.session = new FocusSession(this, this.audio);
 		this.register(() => this.session.dispose());
+		this.register(() => this.audio.dispose());
 
 		this.addSettingTab(new ZenZoneSettingTab(this.app, this));
 		this.registerView(VIEW_TYPE_ZEN, (leaf) => new ZenView(leaf, this));
-		this.addRibbonIcon("zap", "Open Zen Zone", () => void this.activateView());
+		this.addRibbonIcon("zap", t("ribbon.open"), () => void this.activateView());
 
-		// The session runs without the panel, so it needs panel-free controls.
-		this.addCommand({
-			id: "toggle-focus-timer",
-			name: "Start or pause the focus timer",
-			callback: () => this.session.toggle()
-		});
-		this.addCommand({
-			id: "reset-focus-session",
-			name: "Reset the focus session",
-			callback: () => this.session.reset()
-		});
+		// Session and music run without the panel, so they need panel-free controls.
+		this.addCommand({ id: "open-panel", name: t("command.open"), callback: () => void this.activateView() });
+		this.addCommand({ id: "toggle-focus-timer", name: t("command.toggle"), callback: () => this.session.toggle() });
+		this.addCommand({ id: "skip-phase", name: t("command.skip"), callback: () => this.session.skip() });
+		this.addCommand({ id: "reset-focus-session", name: t("command.reset"), callback: () => this.session.reset() });
+		this.addCommand({ id: "toggle-music", name: t("command.music"), callback: () => this.audio.toggle() });
+		this.addCommand({ id: "next-track", name: t("command.next"), callback: () => this.audio.next() });
 	}
 
 	onunload(): void {
 		this.clearZenMode();
-		this.removeBreakOverlay();
 		this.releaseCueAudio();
+		this.dataListeners.clear();
 	}
 
 	// --- Settings --------------------------------------------------------
@@ -56,22 +71,104 @@ export default class ZenZonePlugin extends Plugin {
 		const loaded = (await this.loadData()) as Partial<ZenZoneSettings> | null;
 		const merged: ZenZoneSettings = Object.assign({}, DEFAULT_SETTINGS, loaded);
 
-		// Before per-cycle schedules, these settings held a single MusicReference.
-		merged.workMusic = this.normalizeSchedule(loaded?.workMusic, DEFAULT_MUSIC_REF);
-		merged.breakMusic = this.normalizeSchedule(loaded?.breakMusic, DEFAULT_BREAK_REF);
+		merged.cycles = clamp(Math.round(Number(merged.cycles)) || DEFAULT_SETTINGS.cycles, 1, MAX_CYCLES);
+		merged.volume = clamp(Number(merged.volume) || 0, 0, 1);
+		merged.tasks = Array.isArray(merged.tasks) ? merged.tasks : [];
+		merged.playlistData = Array.isArray(merged.playlistData) ? merged.playlistData : [];
+		merged.history = merged.history && typeof merged.history === "object" ? { ...merged.history } : {};
 
 		this.settings = merged;
+		this.fitMusicSchedules();
+		this.pruneHistory();
 	}
 
-	private normalizeSchedule(value: unknown, fallback: MusicReference): MusicReference[] {
-		if (!Array.isArray(value)) {
-			return createMusicSchedule((value as MusicReference | undefined) ?? fallback);
+	/**
+	 * Makes both music schedules exactly one entry per cycle. Before per-cycle
+	 * schedules these settings held a single reference, which is spread over
+	 * every cycle; a longer run repeats the last cycle's choice.
+	 */
+	fitMusicSchedules(): void {
+		const fit = (value: unknown, fallback: MusicReference): MusicReference[] => {
+			const list: MusicReference[] = Array.isArray(value) ? value : value ? [value as MusicReference] : [];
+			return Array.from({ length: this.settings.cycles }, (_, i) => ({
+				...(list[i] ?? list[list.length - 1] ?? fallback)
+			}));
+		};
+		this.settings.workMusic = fit(this.settings.workMusic, DEFAULT_MUSIC_REF);
+		this.settings.breakMusic = fit(this.settings.breakMusic, DEFAULT_BREAK_REF);
+	}
+
+	/**
+	 * Keeps the per-cycle schedules pointing at the same tracks after the track
+	 * at `removedIndex` was deleted from the playlist.
+	 */
+	repairMusicSchedules(removedIndex: number): void {
+		for (const ref of [...this.settings.workMusic, ...this.settings.breakMusic]) {
+			if (ref.trackIndex === removedIndex) {
+				ref.trackIndex = 0;
+				ref.checkpointIndex = -1;
+			} else if (ref.trackIndex > removedIndex) {
+				ref.trackIndex--;
+			}
 		}
-		return Array.from({ length: CYCLE_COUNT }, (_, i) => ({ ...(value[i] ?? fallback) }));
 	}
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	/** Lets open views repaint when tasks, history or the playlist change behind them. */
+	onDataChange(listener: () => void): () => void {
+		this.dataListeners.add(listener);
+		return () => this.dataListeners.delete(listener);
+	}
+
+	notifyDataChange(): void {
+		for (const listener of this.dataListeners) listener();
+	}
+
+	// --- Focus history ---------------------------------------------------
+
+	private pruneHistory(): void {
+		const keys = Object.keys(this.settings.history).sort();
+		for (const key of keys.slice(0, Math.max(0, keys.length - HISTORY_DAYS))) {
+			delete this.settings.history[key];
+		}
+	}
+
+	/** Totals for today, and for the last seven days including today. */
+	focusStats(): { today: DayStats; week: DayStats } {
+		const keys = Object.keys(this.settings.history).sort();
+		const todayKey = now().format("YYYY-MM-DD");
+		const weekStart = formatClock(Date.now() - 6 * 86_400_000, "YYYY-MM-DD");
+		const week: DayStats = { sessions: 0, minutes: 0 };
+		for (const key of keys) {
+			if (key < weekStart || key > todayKey) continue;
+			week.sessions += this.settings.history[key].sessions;
+			week.minutes += this.settings.history[key].minutes;
+		}
+		return { today: this.settings.history[todayKey] ?? { sessions: 0, minutes: 0 }, week };
+	}
+
+	/** Books a finished focus phase: history, the current task's tally, and the daily note. */
+	async recordFocusSession(startedAtMs: number, minutes: number): Promise<void> {
+		const day = now().format("YYYY-MM-DD");
+		const stats = (this.settings.history[day] ??= { sessions: 0, minutes: 0 });
+		stats.sessions++;
+		stats.minutes += minutes;
+		this.pruneHistory();
+
+		const task = this.settings.tasks[0];
+		if (task) task.pomodoros = (task.pomodoros ?? 0) + 1;
+
+		await this.saveSettings();
+		this.notifyDataChange();
+
+		if (this.settings.logSessionsToDaily) {
+			const span = `${formatClock(startedAtMs, "HH:mm")}–${now().format("HH:mm")}`;
+			const label = task?.content ?? t("log.focus");
+			await this.dailyNotes.appendLine(`- ${span} 🍅 ${label}`, this.settings.sessionLogHeader || "Focus log");
+		}
 	}
 
 	// --- View ------------------------------------------------------------
@@ -83,10 +180,10 @@ export default class ZenZonePlugin extends Plugin {
 			leaf = workspace.getRightLeaf(false);
 			await leaf?.setViewState({ type: VIEW_TYPE_ZEN, active: true });
 		}
-		if (leaf) workspace.revealLeaf(leaf);
+		if (leaf) await workspace.revealLeaf(leaf);
 	}
 
-	// --- Status bar ------------------------------------------------------
+	// --- Status bar and notifications ------------------------------------
 
 	updateStatusBar(text: string): void {
 		if (!this.statusBarItem) return;
@@ -98,42 +195,63 @@ export default class ZenZonePlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * Announces a phase change: always in the app, and through the system when
+	 * the app is in the background and would otherwise go unnoticed.
+	 */
+	announce(message: string): void {
+		new Notice(message);
+		if (!this.settings.systemNotifications || document.hasFocus()) return;
+		try {
+			if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+				new Notification("Zen Zone", { body: message });
+			}
+		} catch {
+			// Not every platform can raise system notifications; the notice is enough.
+		}
+	}
+
 	// --- Zen mode --------------------------------------------------------
 
 	enterZenMode(): void {
+		if (document.body.hasClass("zen-mode-active")) return;
 		document.body.addClass("zen-mode-active");
+
 		if (this.settings.autoCollapseSidebars) {
-			this.app.workspace.leftSplit?.collapse();
-			this.app.workspace.rightSplit?.collapse();
+			const { leftSplit, rightSplit } = this.app.workspace;
+			this.collapsedSides = [];
+			if (leftSplit && !leftSplit.collapsed) {
+				leftSplit.collapse();
+				this.collapsedSides.push("left");
+			}
+			if (rightSplit && !rightSplit.collapsed) {
+				rightSplit.collapse();
+				this.collapsedSides.push("right");
+			}
 		}
 		if (this.settings.hideHeader) document.body.addClass("zen-hide-header");
-		new Notice("🧘 Focus Mode On");
+		// The status bar is part of the chrome, but not when it carries the timer.
+		if (this.settings.showStatusBarTimer) document.body.addClass("zen-keep-status-bar");
+		new Notice(t("notice.focusOn"));
 	}
 
 	exitZenMode(): void {
 		const wasActive = document.body.hasClass("zen-mode-active");
 		this.clearZenMode();
-		if (wasActive) new Notice("Focus Mode Off");
+		if (!wasActive) return;
+
+		// Put back only what zen mode itself closed.
+		for (const side of this.collapsedSides) {
+			(side === "left" ? this.app.workspace.leftSplit : this.app.workspace.rightSplit)?.expand();
+		}
+		this.collapsedSides = [];
+		new Notice(t("notice.focusOff"));
 	}
 
 	/** Undoes the zen-mode DOM changes without announcing it, for teardown. */
 	private clearZenMode(): void {
-		document.body.removeClasses(["zen-mode-active", "zen-hide-header"]);
+		document.body.removeClasses(["zen-mode-active", "zen-hide-header", "zen-keep-status-bar"]);
 		this.updateStatusBar("");
-	}
-
-	showBreakOverlay(): void {
-		this.removeBreakOverlay();
-		this.overlayEl = document.body.createDiv({ cls: "zen-break-overlay" });
-		const content = this.overlayEl.createDiv({ cls: "zen-break-content" });
-		content.createEl("h1", { text: "🎉 Session Complete" });
-		content.createDiv({ text: `Great work! You've completed ${CYCLE_COUNT} cycles.` });
-		content.createEl("button", { text: "Finish" }).addEventListener("click", () => this.removeBreakOverlay());
-	}
-
-	private removeBreakOverlay(): void {
-		this.overlayEl?.remove();
-		this.overlayEl = null;
 	}
 
 	// --- Transition cues -------------------------------------------------
@@ -142,7 +260,7 @@ export default class ZenZonePlugin extends Plugin {
 	resolveSoundSrc(path: string): string | null {
 		if (!path) return null;
 		const file = this.app.vault.getAbstractFileByPath(normalizePath(path));
-		return file instanceof TFile ? this.app.vault.adapter.getResourcePath(file.path) : null;
+		return file instanceof TFile ? this.app.vault.getResourcePath(file) : null;
 	}
 
 	/** Plays a cue from the vault through the one shared audio element. */
@@ -154,6 +272,13 @@ export default class ZenZonePlugin extends Plugin {
 		audio.pause();
 		audio.src = src;
 		audio.play().catch((error) => console.error("Zen Zone: failed to play sound", error));
+	}
+
+	/** Cuts off a cue that is still playing, for when its transition is cancelled. */
+	stopLocalSound(): void {
+		if (!this.cueAudio) return;
+		this.cueAudio.pause();
+		this.dropCueBuffer();
 	}
 
 	private createCueAudio(): HTMLAudioElement {

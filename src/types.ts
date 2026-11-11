@@ -10,6 +10,7 @@ export interface Checkpoint {
 
 export interface PlaylistItem {
 	title: string;
+	/** A YouTube video or playlist URL, or the vault path of an audio file or folder. */
 	url: string;
 	checkpoints?: Checkpoint[];
 }
@@ -27,6 +28,14 @@ export interface ZenTask {
 	header?: string;
 	/** Daily note the task was filed into, so it can be completed there later. */
 	filePath?: string;
+	/** Focus phases finished while this task was the current one. */
+	pomodoros?: number;
+}
+
+/** What one day of focus added up to. */
+export interface DayStats {
+	sessions: number;
+	minutes: number;
 }
 
 export type DailyTaskAction = "add" | "complete" | "delete";
@@ -40,18 +49,67 @@ export interface YouTubeInfo {
 	listId: string | null;
 }
 
+export interface LocalFile {
+	/** A URL the app can play, resolved from the vault path. */
+	url: string;
+	title: string;
+}
+
+/** Where a track's sound comes from. */
+export type TrackSource =
+	| ({ kind: "youtube" } & YouTubeInfo)
+	| { kind: "local"; path: string; files: LocalFile[] };
+
+/** A player for one kind of {@link TrackSource}. */
+export interface AudioBackend {
+	readonly kind: TrackSource["kind"];
+	/** Reports the position in the playlist, its size and the current title. */
+	onPlaylistInfo?: (index: number, total: number, title: string) => void;
+	onReady?: () => void;
+	load(source: TrackSource): void;
+	getSource(): TrackSource;
+	play(): void;
+	pause(): void;
+	/** `volume` runs from 0 to 1. */
+	setVolume(volume: number): void;
+	seekTo(seconds: number): void;
+	setShuffle(shuffle: boolean): void;
+	setRepeatMode(mode: RepeatMode): void;
+	nextVideo(): void;
+	previousVideo(): void;
+	isPlayerReady(): boolean;
+	getCurrentTime(): number;
+	destroy(): void;
+}
+
 export interface ZenZoneSettings {
 	playlistData: PlaylistItem[];
+	/** Focus phases in one run; the last one ends in the long break. */
+	cycles: number;
 	workDuration: number;
 	shortBreakDuration: number;
 	longBreakDuration: number;
+	autoStartBreaks: boolean;
+	autoStartFocus: boolean;
+	/** Raise a system notification on phase changes while the app is in the background. */
+	systemNotifications: boolean;
 	autoCollapseSidebars: boolean;
 	hideHeader: boolean;
 	autoLogToDaily: boolean;
 	showStatusBarTimer: boolean;
 	/** Minutes of silence before the YouTube player is torn down. 0 disables it. */
 	audioIdleReleaseMinutes: number;
+	/** Show the YouTube video in a small floating player instead of keeping it out of sight. */
+	showVideo: boolean;
+	/** 0 to 1. */
+	volume: number;
+	shuffle: boolean;
+	repeatMode: RepeatMode;
 	tasks: ZenTask[];
+	/** Focus totals per day, keyed by `YYYY-MM-DD`. */
+	history: Record<string, DayStats>;
+	logSessionsToDaily: boolean;
+	sessionLogHeader: string;
 	workMusic: MusicReference[];
 	breakMusic: MusicReference[];
 	dailyNoteFormat: string;
@@ -79,14 +137,9 @@ export type SoundDurationKey = {
 	[K in keyof ZenZoneSettings]: K extends `duration${string}` ? K : never;
 }[keyof ZenZoneSettings];
 
-// --- Ambient globals -----------------------------------------------------
+// --- YouTube player -----------------------------------------------------
 
-/** The subset of moment.js that Obsidian exposes and this plugin uses. */
-export interface MomentLike {
-	format(pattern?: string): string;
-}
-
-/** The subset of the YouTube IFrame Player API that this plugin uses. */
+/** The subset of the YouTube player commands that this plugin uses. */
 export interface YouTubePlayer {
 	playVideo(): void;
 	pauseVideo(): void;
@@ -119,15 +172,7 @@ export interface YouTubePlayerOptions {
 	events: {
 		onReady: () => void;
 		onStateChange: (event: YouTubePlayerEvent) => void;
+		/** Fired when the playlist, the playlist position or the video metadata changes. */
+		onInfoChange?: () => void;
 	};
-}
-
-declare global {
-	interface Window {
-		YT?: {
-			Player: new (elementId: string, options: YouTubePlayerOptions) => YouTubePlayer;
-		};
-		onYouTubeIframeAPIReady?: () => void;
-		moment: () => MomentLike;
-	}
 }

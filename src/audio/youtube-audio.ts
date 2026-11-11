@@ -1,7 +1,6 @@
 import { TimeoutRegistry } from "../dom";
-import { RepeatMode, YouTubePlayer, YouTubePlayerEvent } from "../types";
-
-const IFRAME_API_SRC = "https://www.youtube.com/iframe_api";
+import { AudioBackend, RepeatMode, TrackSource, YouTubePlayer, YouTubePlayerEvent } from "../types";
+import { YouTubeIframePlayer } from "./youtube-iframe";
 
 /** YouTube IFrame Player API state codes. */
 const PlayerState = { ENDED: 0, PLAYING: 1, CUED: 5 } as const;
@@ -18,17 +17,19 @@ const DELAY = {
 } as const;
 
 /**
- * A hidden YouTube player used as a background audio source.
+ * A YouTube embed used as an audio source. How visible it is on screen is up
+ * to the host element it is created in.
  *
- * Playback info is pushed from the API's `onStateChange` events rather than
- * polled, and every delayed action is tracked so nothing fires after
+ * Playback info is pushed from the embed's own messages rather than polled, and every delayed action is tracked so nothing fires after
  * {@link destroy}.
  */
-export class YouTubeAudio {
+export class YouTubeAudio implements AudioBackend {
+	readonly kind = "youtube" as const;
+
 	private player: YouTubePlayer | null = null;
 	private isReady = false;
 	private destroyed = false;
-	private readonly containerId: string;
+	private readonly wrapper: HTMLElement;
 	private playQueued = false;
 	private volumePercent = 50;
 	private readonly timeouts = new TimeoutRegistry();
@@ -50,74 +51,45 @@ export class YouTubeAudio {
 		container.querySelector(".yt-player-wrapper")?.remove();
 
 		const wrapper = container.createDiv({ cls: "yt-player-wrapper" });
-		this.containerId = `yt-player-${Date.now()}`;
-		wrapper.id = this.containerId;
+		this.wrapper = wrapper;
 
 		this.currentVideoId = videoId;
 		this.currentListId = listId;
 
-		this.initAPI(videoId, listId);
+		this.createPlayer(wrapper, videoId, listId);
 	}
 
 	// --- Setup -----------------------------------------------------------
 
-	private initAPI(videoId: string | null, listId: string | null): void {
-		if (!window.YT) this.injectApiScript();
-
-		const initPlayer = () => {
-			if (this.destroyed || !window.YT) return;
-
-			const playerVars: Record<string, string | number> = {
-				controls: 0,
-				autoplay: 0,
-				enablejsapi: 1,
-				origin: window.location.origin,
-				modestbranding: 1,
-				rel: 0,
-				showinfo: 0,
-				iv_load_policy: 3
-			};
-
-			if (listId) {
-				playerVars.listType = "playlist";
-				playerVars.list = listId;
-			} else if (videoId) {
-				playerVars.loop = 1;
-				playerVars.playlist = videoId;
-			}
-
-			this.player = new window.YT.Player(this.containerId, {
-				height: "0",
-				width: "0",
-				videoId: videoId ?? undefined,
-				playerVars,
-				events: {
-					onReady: () => this.onPlayerReady(),
-					onStateChange: (event) => this.onPlayerStateChange(event)
-				}
-			});
+	private createPlayer(host: HTMLElement, videoId: string | null, listId: string | null): void {
+		const playerVars: Record<string, string | number> = {
+			controls: 0,
+			autoplay: 0,
+			origin: window.location.origin,
+			rel: 0,
+			iv_load_policy: 3,
+			playsinline: 1
 		};
 
-		if (window.YT?.Player) {
-			initPlayer();
-		} else {
-			const previous = window.onYouTubeIframeAPIReady;
-			window.onYouTubeIframeAPIReady = () => {
-				previous?.();
-				initPlayer();
-			};
+		if (listId) {
+			playerVars.listType = "playlist";
+			playerVars.list = listId;
+		} else if (videoId) {
+			playerVars.loop = 1;
+			playerVars.playlist = videoId;
 		}
-	}
 
-	private injectApiScript(): void {
-		const script = document.createElement("script");
-		script.src = IFRAME_API_SRC;
-		const firstScript = document.getElementsByTagName("script")[0];
-		if (firstScript?.parentNode) {
-			firstScript.parentNode.insertBefore(script, firstScript);
-		} else {
-			document.head.appendChild(script);
-		}
+		this.player = new YouTubeIframePlayer(host, {
+			height: "100%",
+			width: "100%",
+			videoId: videoId ?? undefined,
+			playerVars,
+			events: {
+				onReady: () => this.onPlayerReady(),
+				onStateChange: (event) => this.onPlayerStateChange(event),
+				onInfoChange: () => this.updatePlaylistInfo()
+			}
+		});
 	}
 
 	// --- API events ------------------------------------------------------
@@ -197,10 +169,6 @@ export class YouTubeAudio {
 		this.applyRepeatMode();
 	}
 
-	getRepeatMode(): RepeatMode {
-		return this.repeatMode;
-	}
-
 	private applyRepeatMode(): void {
 		if (!this.isReady || typeof this.player?.setLoop !== "function") return;
 		this.player.setLoop(this.repeatMode !== RepeatMode.Off);
@@ -215,7 +183,15 @@ export class YouTubeAudio {
 		this.timeouts.set(() => this.player?.seekTo(0, true), DELAY.seekAfterPause);
 	}
 
-	loadVideoOrPlaylist(videoId: string | null, listId: string | null): void {
+	load(source: TrackSource): void {
+		if (source.kind === "youtube") this.loadVideoOrPlaylist(source.videoId, source.listId);
+	}
+
+	getSource(): TrackSource {
+		return { kind: "youtube", videoId: this.currentVideoId, listId: this.currentListId };
+	}
+
+	private loadVideoOrPlaylist(videoId: string | null, listId: string | null): void {
 		if (!this.isReady || !this.player) return;
 		if (videoId === this.currentVideoId && listId === this.currentListId) return;
 
@@ -297,10 +273,6 @@ export class YouTubeAudio {
 		}
 	}
 
-	getCurrentTrackInfo(): { videoId: string | null; listId: string | null } {
-		return { videoId: this.currentVideoId, listId: this.currentListId };
-	}
-
 	// --- Teardown --------------------------------------------------------
 
 	destroy(): void {
@@ -329,7 +301,7 @@ export class YouTubeAudio {
 			}, DELAY.destroyPlayer);
 		}
 
-		window.setTimeout(() => document.getElementById(this.containerId)?.remove(), DELAY.destroyDom);
+		window.setTimeout(() => this.wrapper.remove(), DELAY.destroyDom);
 
 		this.player = null;
 		this.isReady = false;

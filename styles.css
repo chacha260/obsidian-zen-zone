@@ -301,15 +301,6 @@
 }
 
 /* The YouTube iframe is a 0x0 audio-only source. */
-.zen-player-hidden {
-	width: 0;
-	height: 0;
-	overflow: hidden;
-}
-
-.yt-player-wrapper {
-	display: none;
-}
 
 .zen-audio-top-controls {
 	display: flex;
@@ -523,62 +514,82 @@
 
 /* --- Zen Mode Overrides --- */
 body.zen-mode-active.zen-hide-header .workspace-ribbon,
-body.zen-mode-active.zen-hide-header .status-bar,
+body.zen-mode-active.zen-hide-header:not(.zen-keep-status-bar) .status-bar,
 body.zen-mode-active.zen-hide-header .app-header,
 body.zen-mode-active.zen-hide-header .view-header,
 body.zen-mode-active.zen-hide-header .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* --- Break Overlay --- */
-.zen-break-overlay {
-	position: fixed;
-	inset: 0;
-	background: rgba(0, 0, 0, 0.85);
-	backdrop-filter: blur(5px);
-	z-index: 9999;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	animation: fadeIn 0.5s ease;
-}
-
-.zen-break-content {
-	background: var(--background-primary);
-	padding: 40px 60px;
-	border-radius: 16px;
-	text-align: center;
-	box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-	border: 1px solid var(--interactive-accent);
-}
-
-.zen-break-content h1 {
-	color: var(--interactive-accent);
-	margin-bottom: 10px;
-}
-
-.zen-break-content button {
-	margin-top: 25px;
-	padding: 10px 30px;
-	font-size: 1em;
-	background-color: var(--interactive-normal);
-	color: var(--text-normal);
-	border-radius: 6px;
-	cursor: pointer;
-	font-family: var(--font-interface);
-}
-
-@keyframes fadeIn {
-	from {
-		opacity: 0;
-	}
-	to {
-		opacity: 1;
-	}
-}
-
 /* --- Small Control Button Active State (Shuffle / Repeat) --- */
 .zen-music-btn-small.is-active {
 	color: var(--interactive-accent);
 	border-color: var(--interactive-accent);
+}
+
+/* --- Audio host ---
+   Lives on the body so music survives closing the panel. Kept in the layout at
+   zero size when the video is not shown: a display:none iframe may not play. */
+.zen-audio-host {
+	position: fixed;
+	right: 16px;
+	bottom: 44px;
+	width: 0;
+	height: 0;
+	overflow: hidden;
+	z-index: var(--layer-popover);
+}
+
+.zen-audio-host.is-video-visible {
+	width: 240px;
+	height: 135px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: var(--shadow-s);
+	background: var(--background-primary);
+}
+
+.zen-audio-host .yt-player-wrapper,
+.zen-audio-host iframe {
+	width: 100%;
+	height: 100%;
+	border: 0;
+	display: block;
+}
+
+.is-mobile .zen-audio-host.is-video-visible {
+	width: 160px;
+	height: 90px;
+	bottom: 64px;
+}
+
+/* --- Timer extras --- */
+.zen-skip-btn {
+	display: flex;
+	align-items: center;
+	margin-right: 8px;
+}
+
+.zen-skip-btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.zen-timer-stats {
+	margin-top: 12px;
+	font-size: 0.8em;
+	color: var(--text-muted);
+	text-align: center;
+	white-space: pre-wrap;
+}
+
+.zen-task-focus-heading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+}
+
+.zen-main-btn-icon {
+	display: flex;
 }

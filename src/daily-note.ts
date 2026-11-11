@@ -1,6 +1,8 @@
 import { App, Notice, TFile, normalizePath } from "obsidian";
+import { t } from "./i18n";
+import { now } from "./moment";
+import { addTaskLine, appendUnderHeading, completeTaskLine, deleteTaskLine, listOpenTasks } from "./task-lines";
 import { DailyTaskAction, ZenZoneSettings } from "./types";
-import { escapeRegExp } from "./utils";
 
 interface DailyNotesInternalPlugin {
 	enabled: boolean;
@@ -14,7 +16,8 @@ interface AppWithInternalPlugins extends App {
 /**
  * Mirrors the plugin's task list into the vault's daily note: adding a task
  * appends a checkbox under the target header, completing it stamps the time,
- * and deleting it removes the line.
+ * and deleting it removes the line. Also appends the focus log and reads back
+ * tasks that were written into the note by hand.
  */
 export class DailyNoteService {
 	constructor(
@@ -28,7 +31,7 @@ export class DailyNoteService {
 
 	/** Path of today's daily note, honouring the configured folder and date format. */
 	todayPath(): string {
-		const fileName = window.moment().format(this.settings.dailyNoteFormat);
+		const fileName = now().format(this.settings.dailyNoteFormat || "YYYY-MM-DD");
 		const folder = this.settings.dailyNoteFolder ? normalizePath(this.settings.dailyNoteFolder) : "";
 		return folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
 	}
@@ -37,63 +40,107 @@ export class DailyNoteService {
 		taskContent: string,
 		customHeader: string | undefined,
 		action: DailyTaskAction,
-		specificFilePath?: string
+		specificFilePath?: string,
+		pomodoros = 0
 	): Promise<void> {
 		if (!this.settings.autoLogToDaily) return;
 
 		const filePath = specificFilePath ?? this.todayPath();
-		const targetHeader = customHeader || this.settings.dailyNoteTargetHeader || "Todo";
+		const targetHeader = customHeader || this.defaultHeader;
+		const note = await this.openNote(filePath, action === "add");
+		if (!note) return;
 
-		let file = this.app.vault.getAbstractFileByPath(filePath);
-		if (!file) {
-			if (action !== "add") {
-				console.warn(`Zen Zone: daily note not found: ${filePath}`);
-				return;
+		await this.edit(note, (content, notices) => {
+			switch (action) {
+				case "add": {
+					const edit = addTaskLine(content, taskContent, targetHeader);
+					if (edit.changed) notices.push(t("daily.added", { header: targetHeader }));
+					return edit.content;
+				}
+				case "complete": {
+					const suffix = pomodoros > 0 ? ` 🍅${pomodoros}` : "";
+					const edit = completeTaskLine(content, taskContent, now().format("HH:mm"), suffix);
+					notices.push(t(edit.changed ? "daily.completed" : "daily.notFound", { note: note.basename }));
+					return edit.content;
+				}
+				case "delete": {
+					const edit = deleteTaskLine(content, taskContent);
+					if (edit.changed) notices.push(t("daily.deleted", { note: note.basename }));
+					return edit.content;
+				}
 			}
-			file = await this.createDailyNote(filePath, taskContent, targetHeader);
-			// Without a template the note is created with the task already in it.
-			if (!file) return;
-		}
-		if (!(file instanceof TFile)) return;
-		const note = file;
+		});
+	}
 
-		// process() does the read-modify-write in one atomic pass, so a note the
-		// user is editing at the same time cannot lose the update. Notices are
-		// collected rather than fired inside the mutator, which must stay pure.
-		const notices: string[] = [];
-		await this.app.vault.process(note, (content) =>
-			this.applyAction(action, content, taskContent, targetHeader, note.basename, notices)
-		);
+	/** Appends a line under `header` in today's daily note, creating the note if needed. */
+	async appendLine(line: string, header: string): Promise<void> {
+		const note = await this.openNote(this.todayPath(), true);
+		if (!note) return;
+		await this.edit(note, (content) => appendUnderHeading(content, line, header).content);
+	}
+
+	/** The open checkboxes under the default heading of today's daily note. */
+	async readOpenTasks(): Promise<string[]> {
+		const file = this.app.vault.getAbstractFileByPath(normalizePath(this.todayPath()));
+		if (!(file instanceof TFile)) return [];
+		return listOpenTasks(await this.app.vault.cachedRead(file), this.defaultHeader);
+	}
+
+	private get defaultHeader(): string {
+		return this.settings.dailyNoteTargetHeader || "Todo";
+	}
+
+	// --- Note access -----------------------------------------------------
+
+	private async openNote(filePath: string, createIfMissing: boolean): Promise<TFile | null> {
+		const path = normalizePath(filePath);
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) return file;
+		if (file) return null;
+		if (!createIfMissing) {
+			console.warn(`Zen Zone: daily note not found: ${path}`);
+			return null;
+		}
+		return this.createDailyNote(path);
+	}
+
+	/**
+	 * Runs one read-modify-write over the note. `process()` does it atomically,
+	 * so a note the user is editing at the same time cannot lose the update.
+	 * Notices are collected rather than fired inside the mutator, which may run
+	 * more than once and must stay pure.
+	 */
+	private async edit(note: TFile, mutate: (content: string, notices: string[]) => string): Promise<void> {
+		let notices: string[] = [];
+		try {
+			await this.app.vault.process(note, (content) => {
+				notices = [];
+				return mutate(content, notices);
+			});
+		} catch (error) {
+			console.error("Zen Zone: failed to update the daily note", error);
+			new Notice(t("daily.updateFailed"));
+			return;
+		}
 		for (const notice of notices) new Notice(notice);
 	}
 
-	// --- Note creation ---------------------------------------------------
-
-	/**
-	 * Creates the daily note. Returns the new file when it was seeded from a
-	 * template and still needs the task appended, or `null` when the note was
-	 * generated with the task already included.
-	 */
-	private async createDailyNote(filePath: string, taskContent: string, targetHeader: string): Promise<TFile | null> {
+	/** Creates the daily note from the Daily notes template, or with just a date title. */
+	private async createDailyNote(filePath: string): Promise<TFile | null> {
 		try {
 			await this.ensureFolderExists(filePath);
 
 			const templatePath = this.getDailyNoteTemplatePath();
 			const templateContent = templatePath ? await this.getTemplateContent(templatePath) : "";
-
-			if (!templateContent) {
-				const date = window.moment().format("YYYY-MM-DD");
-				await this.app.vault.create(filePath, `# ${date}\n\n## ${targetHeader}\n- [ ] ${taskContent}\n`);
-				new Notice(`Daily note created: ${filePath}`);
-				return null;
-			}
-
-			const created = await this.app.vault.create(filePath, templateContent);
-			new Notice(`Daily note created from template: ${filePath}`);
+			const created = await this.app.vault.create(
+				filePath,
+				templateContent || `# ${now().format("YYYY-MM-DD")}\n`
+			);
+			new Notice(t(templateContent ? "daily.createdFromTemplate" : "daily.created", { path: filePath }));
 			return created;
 		} catch (error) {
 			console.error("Zen Zone: failed to create the daily note", error);
-			new Notice("Failed to create the daily note.");
+			new Notice(t("daily.createFailed"));
 			return null;
 		}
 	}
@@ -123,67 +170,11 @@ export class DailyNoteService {
 		const templateFile = this.app.vault.getAbstractFileByPath(normalizePath(`${templatePath}.md`));
 		if (!(templateFile instanceof TFile)) return "";
 
-		const now = window.moment();
+		const current = now();
 		return (await this.app.vault.read(templateFile))
-			.replace(/{{\s*date\s*}}/gi, now.format("YYYY-MM-DD"))
-			.replace(/{{\s*time\s*}}/gi, now.format("HH:mm"))
-			.replace(/{{\s*title\s*}}/gi, now.format(this.settings.dailyNoteFormat))
-			.replace(/{{\s*date:([^}]+)\s*}}/gi, (_match, format: string) => now.format(format.trim()));
-	}
-
-	// --- Line editing ----------------------------------------------------
-
-	private applyAction(
-		action: DailyTaskAction,
-		content: string,
-		taskContent: string,
-		targetHeader: string,
-		noteName: string,
-		notices: string[]
-	): string {
-		switch (action) {
-			case "add":
-				return this.addTaskLine(content, taskContent, targetHeader, notices);
-			case "complete":
-				return this.completeTaskLine(content, taskContent, noteName, notices);
-			case "delete":
-				return this.deleteTaskLine(content, taskContent, noteName, notices);
-		}
-	}
-
-	private addTaskLine(content: string, taskContent: string, targetHeader: string, notices: string[]): string {
-		const line = `- [ ] ${taskContent}`;
-		if (content.includes(line)) return content;
-
-		const sectionRegex = new RegExp(
-			`(#{1,6}\\s+${escapeRegExp(targetHeader)}[\\s\\S]*?)(?=\\n#{1,6}\\s|$)`,
-			"i"
-		);
-
-		notices.push(`Task added to ${targetHeader}`);
-		if (sectionRegex.test(content)) {
-			return content.replace(sectionRegex, (section) => `${section.trimEnd()}\n${line}\n`);
-		}
-		return `${content.trimEnd()}\n\n## ${targetHeader}\n${line}`;
-	}
-
-	private completeTaskLine(content: string, taskContent: string, noteName: string, notices: string[]): string {
-		const taskRegex = new RegExp(`^([\\s\\t]*)[-*+]\\s+\\[ \\]\\s+${escapeRegExp(taskContent)}\\s*$`, "m");
-		if (!taskRegex.test(content)) {
-			notices.push(`Task not found in ${noteName}.`);
-			return content;
-		}
-		notices.push(`Task marked completed in ${noteName}`);
-		return content.replace(taskRegex, `$1- [x] ${window.moment().format("HH:mm")} ${taskContent}`);
-	}
-
-	private deleteTaskLine(content: string, taskContent: string, noteName: string, notices: string[]): string {
-		const deleteRegex = new RegExp(
-			`^([\\s\\t]*)[-*+]\\s+\\[.\\]\\s+.*?${escapeRegExp(taskContent)}\\s*(\\n|$)`,
-			"m"
-		);
-		if (!deleteRegex.test(content)) return content;
-		notices.push(`Task deleted from ${noteName}`);
-		return content.replace(deleteRegex, "");
+			.replace(/{{\s*date\s*}}/gi, current.format("YYYY-MM-DD"))
+			.replace(/{{\s*time\s*}}/gi, current.format("HH:mm"))
+			.replace(/{{\s*title\s*}}/gi, current.format(this.settings.dailyNoteFormat || "YYYY-MM-DD"))
+			.replace(/{{\s*date:([^}]+)\s*}}/gi, (_match, format: string) => current.format(format.trim()));
 	}
 }
