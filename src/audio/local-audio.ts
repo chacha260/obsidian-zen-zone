@@ -107,7 +107,11 @@ export class LocalAudio implements AudioBackend {
 
 	play(): void {
 		this.wantsToPlay = true;
-		this.audio?.play().catch((error) => console.error("Zen Zone: failed to play the audio file", error));
+		this.audio?.play().catch((error: unknown) => {
+			// Switching track or pausing while a play is pending aborts it; that is not a failure.
+			if (error instanceof DOMException && error.name === "AbortError") return;
+			console.error("Zen Zone: failed to play the audio file", error);
+		});
 	}
 
 	pause(): void {

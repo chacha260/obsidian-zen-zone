@@ -290,14 +290,16 @@ export class TaskCard {
 
 	/** Ticks the checkbox, then removes the task once the feedback delay is over. */
 	private completeTask(task: ZenTask, notice?: string): void {
-		this.timeouts.set(async () => {
-			const index = this.tasks.indexOf(task);
-			if (index < 0) return;
-			await this.plugin.dailyNotes.manageTask(task.content, task.header, "complete", task.filePath, task.pomodoros ?? 0);
-			this.tasks.splice(index, 1);
-			await this.plugin.saveSettings();
-			this.refresh();
-			if (notice) new Notice(notice);
-		}, COMPLETION_FEEDBACK_MS);
+		this.timeouts.set(() => void this.finishTask(task, notice), COMPLETION_FEEDBACK_MS);
+	}
+
+	private async finishTask(task: ZenTask, notice?: string): Promise<void> {
+		const index = this.tasks.indexOf(task);
+		if (index < 0) return;
+		await this.plugin.dailyNotes.manageTask(task.content, task.header, "complete", task.filePath, task.pomodoros ?? 0);
+		this.tasks.splice(index, 1);
+		await this.plugin.saveSettings();
+		this.refresh();
+		if (notice) new Notice(notice);
 	}
 }

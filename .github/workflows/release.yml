@@ -20,6 +20,9 @@ on:
 
 permissions:
   contents: write
+  # For the build provenance attestation of the release assets.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -34,6 +37,14 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Resolve the version
         id: version

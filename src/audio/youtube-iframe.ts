@@ -144,7 +144,7 @@ export class YouTubeIframePlayer implements YouTubePlayer {
 		if (typeof data !== "string") return null;
 		try {
 			const parsed: unknown = JSON.parse(data);
-			return parsed && typeof parsed === "object" ? (parsed as EmbedMessage) : null;
+			return parsed && typeof parsed === "object" ? parsed : null;
 		} catch {
 			return null;
 		}

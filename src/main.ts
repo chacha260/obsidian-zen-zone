@@ -17,6 +17,8 @@ import { clamp } from "./utils";
 import { ZenView } from "./view/zen-view";
 import { ZenZoneSettingTab } from "./settings/settings-tab";
 
+const ZEN_MODE_CLASSES = ["zen-mode-active", "zen-hide-header", "zen-keep-status-bar"];
+
 export default class ZenZonePlugin extends Plugin {
 	settings!: ZenZoneSettings;
 	dailyNotes!: DailyNoteService;
@@ -30,6 +32,7 @@ export default class ZenZonePlugin extends Plugin {
 	private cueAudio: HTMLAudioElement | null = null;
 	/** Sidebars this plugin collapsed for zen mode, to be reopened afterwards. */
 	private collapsedSides: Array<"left" | "right"> = [];
+	private zenModeActive = false;
 	private readonly dataListeners = new Set<() => void>();
 
 	async onload(): Promise<void> {
@@ -45,6 +48,13 @@ export default class ZenZonePlugin extends Plugin {
 		this.session = new FocusSession(this, this.audio);
 		this.register(() => this.session.dispose());
 		this.register(() => this.audio.dispose());
+
+		// Zen mode restyles the whole app, so a window opened mid-session has to catch up.
+		this.registerEvent(
+			this.app.workspace.on("window-open", (workspaceWindow) => {
+				if (this.zenModeActive) workspaceWindow.doc.body.addClasses(this.zenModeClasses());
+			})
+		);
 
 		this.addSettingTab(new ZenZoneSettingTab(this.app, this));
 		this.registerView(VIEW_TYPE_ZEN, (leaf) => new ZenView(leaf, this));
@@ -89,7 +99,7 @@ export default class ZenZonePlugin extends Plugin {
 	 */
 	fitMusicSchedules(): void {
 		const fit = (value: unknown, fallback: MusicReference): MusicReference[] => {
-			const list: MusicReference[] = Array.isArray(value) ? value : value ? [value as MusicReference] : [];
+			const list = Array.isArray(value) ? (value as MusicReference[]) : value ? [value as MusicReference] : [];
 			return Array.from({ length: this.settings.cycles }, (_, i) => ({
 				...(list[i] ?? list[list.length - 1] ?? fallback)
 			}));
@@ -201,7 +211,7 @@ export default class ZenZonePlugin extends Plugin {
 	 */
 	announce(message: string): void {
 		new Notice(message);
-		if (!this.settings.systemNotifications || document.hasFocus()) return;
+		if (!this.settings.systemNotifications || this.appDocuments().some((doc) => doc.hasFocus())) return;
 		try {
 			if (typeof Notification !== "undefined" && Notification.permission === "granted") {
 				new Notification("Zen Zone", { body: message });
@@ -214,8 +224,8 @@ export default class ZenZonePlugin extends Plugin {
 	// --- Zen mode --------------------------------------------------------
 
 	enterZenMode(): void {
-		if (document.body.hasClass("zen-mode-active")) return;
-		document.body.addClass("zen-mode-active");
+		if (this.zenModeActive) return;
+		this.zenModeActive = true;
 
 		if (this.settings.autoCollapseSidebars) {
 			const { leftSplit, rightSplit } = this.app.workspace;
@@ -229,14 +239,13 @@ export default class ZenZonePlugin extends Plugin {
 				this.collapsedSides.push("right");
 			}
 		}
-		if (this.settings.hideHeader) document.body.addClass("zen-hide-header");
-		// The status bar is part of the chrome, but not when it carries the timer.
-		if (this.settings.showStatusBarTimer) document.body.addClass("zen-keep-status-bar");
+		const classes = this.zenModeClasses();
+		for (const doc of this.appDocuments()) doc.body.addClasses(classes);
 		new Notice(t("notice.focusOn"));
 	}
 
 	exitZenMode(): void {
-		const wasActive = document.body.hasClass("zen-mode-active");
+		const wasActive = this.zenModeActive;
 		this.clearZenMode();
 		if (!wasActive) return;
 
@@ -250,8 +259,24 @@ export default class ZenZonePlugin extends Plugin {
 
 	/** Undoes the zen-mode DOM changes without announcing it, for teardown. */
 	private clearZenMode(): void {
-		document.body.removeClasses(["zen-mode-active", "zen-hide-header", "zen-keep-status-bar"]);
+		this.zenModeActive = false;
+		for (const doc of this.appDocuments()) doc.body.removeClasses(ZEN_MODE_CLASSES);
 		this.updateStatusBar("");
+	}
+
+	private zenModeClasses(): string[] {
+		const classes = ["zen-mode-active"];
+		if (this.settings.hideHeader) classes.push("zen-hide-header");
+		// The status bar is part of the chrome, but not when it carries the timer.
+		if (this.settings.showStatusBarTimer) classes.push("zen-keep-status-bar");
+		return classes;
+	}
+
+	/** The document of the main window and of every popout window. */
+	private appDocuments(): Document[] {
+		const documents = new Set<Document>([this.app.workspace.containerEl.ownerDocument]);
+		this.app.workspace.iterateAllLeaves((leaf) => documents.add(leaf.view.containerEl.ownerDocument));
+		return [...documents];
 	}
 
 	// --- Transition cues -------------------------------------------------

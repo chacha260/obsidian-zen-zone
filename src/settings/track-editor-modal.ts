@@ -12,7 +12,7 @@ export class TrackEditorModal extends Modal {
 		track: PlaylistItem | null,
 		/** Whether a source resolves to something the plugin can play. */
 		private readonly isPlayable: (source: string) => boolean,
-		private readonly onSubmit: (track: PlaylistItem) => void
+		private readonly onSubmit: (track: PlaylistItem) => void | Promise<void>
 	) {
 		super(app);
 		// Edit a copy so cancelling leaves the stored track untouched.
@@ -59,7 +59,7 @@ export class TrackEditorModal extends Modal {
 				}
 				// Half-filled checkpoint rows would only show up as dead buttons.
 				this.track.checkpoints = this.track.checkpoints?.filter((cp) => cp.label.trim() && cp.time.trim());
-				this.onSubmit(this.track);
+				void this.onSubmit(this.track);
 				this.close();
 			});
 	}
