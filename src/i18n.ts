@@ -88,17 +88,12 @@ const en = {
 	"settings.timer.range": "Default: {default} min. Range: {min}–{max} min.",
 
 	"settings.sound.heading": "Sound effects",
-	"settings.sound.desc": "Path of an audio file in your vault (for example Assets/start.m4a) and how many seconds the music waits for it. Select ▶ to preview.",
 	"settings.sound.start": "Start timer",
 	"settings.sound.focusToShort": "Focus → short break",
 	"settings.sound.shortToFocus": "Short break → focus",
 	"settings.sound.focusToLong": "Focus → long break",
 	"settings.sound.longToFinish": "Long break → finish",
 	"settings.sound.pathPlaceholder": "File path",
-	"settings.sound.secondsPlaceholder": "Sec",
-	"settings.sound.preview": "Preview this sound",
-	"settings.sound.needPath": "Enter a file path first.",
-	"settings.sound.missing": "File not found: {path}",
 
 	"settings.music.heading": "Cycle music",
 	"settings.music.cycle": "Cycle {number}",
@@ -108,8 +103,6 @@ const en = {
 	"settings.music.fromStart": "Start",
 
 	"settings.playlist.heading": "Playlist",
-	"settings.playlist.edit": "Edit",
-	"settings.playlist.delete": "Delete",
 	"settings.playlist.deleted": "Track deleted.",
 	"settings.playlist.add": "Add track",
 
@@ -154,7 +147,6 @@ const en = {
 	"settings.video.name": "Show YouTube video",
 	"settings.video.desc": "Show the video in a small floating player while a YouTube track is active. Turn off to keep the player out of sight; note that YouTube's terms expect an embedded player to stay visible.",
 	"settings.idleRelease.desc": "Minutes of silence before the player is discarded to free memory. Playback resumes from the same position. Set to 0 to disable.",
-	"settings.music.desc": "Choose the music for each cycle.",
 	"settings.playlist.desc": "A track is a YouTube video or playlist, or an audio file or folder in your vault. YouTube is only contacted once you start playback.",
 	"modal.source": "Source",
 	"modal.sourceDesc": "A YouTube video or playlist URL, or the path of an audio file or folder in your vault.",
@@ -247,17 +239,12 @@ const ja: Record<TranslationKey, string> = {
 	"settings.timer.range": "既定: {default}分。範囲: {min}〜{max}分。",
 
 	"settings.sound.heading": "効果音",
-	"settings.sound.desc": "保管庫内の音声ファイルのパス(例: Assets/start.m4a)と、音楽を待機させる秒数を指定します。▶ で試聴できます。",
 	"settings.sound.start": "タイマー開始",
 	"settings.sound.focusToShort": "集中 → 小休憩",
 	"settings.sound.shortToFocus": "小休憩 → 集中",
 	"settings.sound.focusToLong": "集中 → 大休憩",
 	"settings.sound.longToFinish": "大休憩 → 終了",
 	"settings.sound.pathPlaceholder": "ファイルパス",
-	"settings.sound.secondsPlaceholder": "秒",
-	"settings.sound.preview": "この音を試聴",
-	"settings.sound.needPath": "先にファイルパスを入力してください。",
-	"settings.sound.missing": "ファイルが見つかりません: {path}",
 
 	"settings.music.heading": "サイクルごとの音楽",
 	"settings.music.cycle": "サイクル {number}",
@@ -267,8 +254,6 @@ const ja: Record<TranslationKey, string> = {
 	"settings.music.fromStart": "先頭から",
 
 	"settings.playlist.heading": "プレイリスト",
-	"settings.playlist.edit": "編集",
-	"settings.playlist.delete": "削除",
 	"settings.playlist.deleted": "トラックを削除しました。",
 	"settings.playlist.add": "トラックを追加",
 
@@ -311,7 +296,6 @@ const ja: Record<TranslationKey, string> = {
 	"settings.video.name": "YouTube の動画を表示",
 	"settings.video.desc": "YouTube のトラックを再生中、小さなフローティングプレイヤーに動画を表示します。オフにするとプレイヤーを画面に出しません。なお YouTube の規約は、埋め込みプレイヤーを見える状態で使うことを求めています。",
 	"settings.idleRelease.desc": "無音がこの分数続くとプレイヤーを破棄してメモリを解放します。次の再生は同じ位置から再開します。0 で無効。",
-	"settings.music.desc": "サイクルごとに流す音楽を選びます。",
 	"settings.playlist.desc": "トラックには YouTube の動画・プレイリスト、または保管庫内の音声ファイル・フォルダを指定できます。YouTube への通信は再生を開始したときだけ行います。",
 	"modal.source": "ソース",
 	"modal.sourceDesc": "YouTube の動画・プレイリストの URL、または保管庫内の音声ファイル・フォルダのパス。",

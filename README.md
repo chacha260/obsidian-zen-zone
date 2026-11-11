@@ -88,7 +88,7 @@ No hotkeys are assigned by default. Set your own in **Settings → Hotkeys**.
 
 ## Getting started
 
-**Requires Obsidian 1.7.2 or newer.** Works on desktop and mobile; the status bar timer is desktop only because mobile has no status bar.
+**Requires Obsidian 1.13.0 or newer.** Works on desktop and mobile; the status bar timer is desktop only because mobile has no status bar.
 
 ### Manual installation
 
