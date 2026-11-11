@@ -158,7 +158,10 @@ const en = {
 	"settings.playlist.desc": "A track is a YouTube video or playlist, or an audio file or folder in your vault. YouTube is only contacted once you start playback.",
 	"modal.source": "Source",
 	"modal.sourceDesc": "A YouTube video or playlist URL, or the path of an audio file or folder in your vault.",
-	"modal.invalidSource": "Enter a YouTube URL, or pick an audio file or folder from your vault."
+	"modal.invalidSource": "Enter a YouTube URL, or pick an audio file or folder from your vault.",
+	"settings.sound.fileDesc": "Audio file in your vault to play at this point. Leave empty for none.",
+	"settings.sound.wait": "{name}: wait",
+	"settings.sound.waitDesc": "Seconds the music waits while the sound plays."
 };
 
 export type TranslationKey = keyof typeof en;
@@ -312,7 +315,10 @@ const ja: Record<TranslationKey, string> = {
 	"settings.playlist.desc": "トラックには YouTube の動画・プレイリスト、または保管庫内の音声ファイル・フォルダを指定できます。YouTube への通信は再生を開始したときだけ行います。",
 	"modal.source": "ソース",
 	"modal.sourceDesc": "YouTube の動画・プレイリストの URL、または保管庫内の音声ファイル・フォルダのパス。",
-	"modal.invalidSource": "YouTube の URL を入力するか、保管庫内の音声ファイル・フォルダを選んでください。"
+	"modal.invalidSource": "YouTube の URL を入力するか、保管庫内の音声ファイル・フォルダを選んでください。",
+	"settings.sound.fileDesc": "この切り替え時に鳴らす保管庫内の音声ファイル。空欄で無音。",
+	"settings.sound.wait": "{name}: 待機時間",
+	"settings.sound.waitDesc": "効果音の再生中、音楽を待機させる秒数。"
 };
 
 const LOCALES: Record<string, Record<TranslationKey, string>> = { en, ja };

@@ -149,7 +149,9 @@ export class AudioEngine implements SessionAudio {
 
 	private createBackend(source: TrackSource): AudioBackend {
 		if (source.kind === "local") return new LocalAudio(source);
-		this.host ??= document.body.createDiv({ cls: "zen-audio-host" });
+		// The player must outlive any popout window, so it always lives in the main one.
+		const mainDocument = this.plugin.app.workspace.containerEl.ownerDocument;
+		this.host ??= mainDocument.body.createDiv({ cls: "zen-audio-host" });
 		return new YouTubeAudio(this.host, source.videoId, source.listId);
 	}
 

@@ -504,12 +504,12 @@
 	border-radius: 4px;
 }
 
-.zen-danger-btn {
-	color: var(--text-error) !important;
+.setting-item-control button.zen-danger-btn {
+	color: var(--text-error);
 }
-.zen-danger-btn:hover {
-	background-color: var(--background-modifier-error-hover) !important;
-	color: var(--text-on-accent) !important;
+.setting-item-control button.zen-danger-btn:hover {
+	background-color: var(--background-modifier-error-hover);
+	color: var(--text-on-accent);
 }
 
 /* --- Zen Mode Overrides --- */
@@ -518,7 +518,7 @@ body.zen-mode-active.zen-hide-header:not(.zen-keep-status-bar) .status-bar,
 body.zen-mode-active.zen-hide-header .app-header,
 body.zen-mode-active.zen-hide-header .view-header,
 body.zen-mode-active.zen-hide-header .workspace-tab-header-container {
-	display: none !important;
+	display: none;
 }
 
 /* --- Small Control Button Active State (Shuffle / Repeat) --- */
