@@ -38,6 +38,8 @@ export class YouTubeAudio implements AudioBackend {
 	private currentListId: string | null = null;
 
 	private lastPlaylistIndex = -1;
+	/** The playlist position "repeat one" holds on to, or -1 when nothing is pinned yet. */
+	private pinnedIndex = -1;
 	private lastVideoTitle = "";
 	private repeatMode: RepeatMode = RepeatMode.Off;
 	/** Suppresses the "repeat one" guard while the user is skipping tracks. */
@@ -87,7 +89,7 @@ export class YouTubeAudio implements AudioBackend {
 			events: {
 				onReady: () => this.onPlayerReady(),
 				onStateChange: (event) => this.onPlayerStateChange(event),
-				onInfoChange: () => this.updatePlaylistInfo()
+				onInfoChange: () => this.onInfoChange()
 			}
 		});
 	}
@@ -98,6 +100,8 @@ export class YouTubeAudio implements AudioBackend {
 		if (this.destroyed) return;
 		this.isReady = true;
 		this.player?.setVolume(this.volumePercent);
+		// A repeat mode chosen before the player existed has not reached it yet.
+		this.applyRepeatMode();
 		if (this.playQueued) {
 			this.player?.playVideo();
 			this.playQueued = false;
@@ -110,10 +114,7 @@ export class YouTubeAudio implements AudioBackend {
 		if (this.destroyed) return;
 
 		if (event.data === PlayerState.PLAYING || event.data === PlayerState.CUED) {
-			// "Repeat one" has to fight the playlist's own auto-advance.
-			if (event.data === PlayerState.PLAYING && this.repeatMode === RepeatMode.One && !this.manualTrackChange) {
-				if (this.rewindToPinnedTrack()) return;
-			}
+			if (event.data === PlayerState.PLAYING && this.rewindToPinnedTrack()) return;
 			this.updatePlaylistInfo();
 			return;
 		}
@@ -131,18 +132,31 @@ export class YouTubeAudio implements AudioBackend {
 		}
 	}
 
-	/** Returns true when playback was sent back to the track pinned by "repeat one". */
+	/**
+	 * "Repeat one" has to fight the playlist's own auto-advance: the first
+	 * track seen is pinned, and playback is sent back to it whenever the
+	 * player moves on by itself. Returns true when it was sent back.
+	 */
 	private rewindToPinnedTrack(): boolean {
-		try {
-			const currentIndex = this.player?.getPlaylistIndex() ?? -1;
-			if (this.lastPlaylistIndex >= 0 && currentIndex !== this.lastPlaylistIndex) {
-				this.player?.playVideoAt(this.lastPlaylistIndex);
-				return true;
-			}
-		} catch {
-			// The player rejects playlist calls until it has loaded one.
+		if (this.repeatMode !== RepeatMode.One || this.manualTrackChange) return false;
+
+		const currentIndex = this.player?.getPlaylistIndex() ?? -1;
+		if (currentIndex < 0) return false;
+		if (this.pinnedIndex < 0) {
+			this.pinnedIndex = currentIndex;
+			return false;
 		}
-		return false;
+		if (currentIndex === this.pinnedIndex) return false;
+
+		this.player?.playVideoAt(this.pinnedIndex);
+		return true;
+	}
+
+	/** The position can arrive after the state change that announced the new track. */
+	private onInfoChange(): void {
+		if (this.destroyed) return;
+		if (this.rewindToPinnedTrack()) return;
+		this.updatePlaylistInfo();
 	}
 
 	private updatePlaylistInfo(): void {
@@ -166,12 +180,15 @@ export class YouTubeAudio implements AudioBackend {
 
 	setRepeatMode(mode: RepeatMode): void {
 		this.repeatMode = mode;
+		// Pin whatever is playing now; -1 lets the next report pin it.
+		this.pinnedIndex = mode === RepeatMode.One ? (this.player?.getPlaylistIndex() ?? -1) : -1;
 		this.applyRepeatMode();
 	}
 
 	private applyRepeatMode(): void {
 		if (!this.isReady || typeof this.player?.setLoop !== "function") return;
-		this.player.setLoop(this.repeatMode !== RepeatMode.Off);
+		// A lone video has no "next": it keeps looping whatever the mode, as ambience should.
+		this.player.setLoop(this.repeatMode !== RepeatMode.Off || !this.currentListId);
 	}
 
 	// --- Loading ---------------------------------------------------------
@@ -203,6 +220,7 @@ export class YouTubeAudio implements AudioBackend {
 
 			this.currentVideoId = videoId;
 			this.currentListId = listId;
+			this.pinnedIndex = -1;
 
 			if (listId) {
 				this.player.loadPlaylist({ listType: "playlist", list: listId, index: 0, startSeconds: 0 });
@@ -254,6 +272,8 @@ export class YouTubeAudio implements AudioBackend {
 		move();
 		this.timeouts.set(() => {
 			this.manualTrackChange = false;
+			// The user chose a new track; that is the one to repeat from now on.
+			this.pinnedIndex = this.repeatMode === RepeatMode.One ? (this.player?.getPlaylistIndex() ?? -1) : -1;
 			this.clearBuffers();
 			this.updatePlaylistInfo();
 		}, DELAY.manualTrackChange);
