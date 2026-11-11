@@ -1,8 +1,8 @@
 {
 	"id": "zen-zone",
 	"name": "Zen Zone",
-	"version": "2.0.1",
-	"minAppVersion": "1.7.2",
+	"version": "2.0.2",
+	"minAppVersion": "1.13.0",
 	"description": "A focus companion: a pomodoro timer with per-cycle ambience from YouTube or local audio, quick-jump checkpoints, and daily note task and focus logging.",
 	"author": "chacha260",
 	"authorUrl": "https://github.com/chacha260",
