@@ -59,7 +59,16 @@ export class TaskCard {
 
 	private renderFocus(): void {
 		const wrapper = this.el.createDiv({ cls: "zen-task-focus-wrapper" });
-		wrapper.createDiv({ text: t("task.current"), cls: "zen-sub-label" });
+		const heading = wrapper.createDiv({ cls: "zen-task-focus-heading" });
+		heading.createDiv({ text: t("task.current"), cls: "zen-sub-label" });
+		if (this.plugin.settings.autoLogToDaily) {
+			const importBtn = heading.createEl("button", {
+				cls: "zen-task-control-btn",
+				attr: { "aria-label": t("task.import") }
+			});
+			setIcon(importBtn, "download");
+			this.listeners.add(importBtn, "click", () => void this.importFromDailyNote());
+		}
 		const display = wrapper.createDiv({ cls: "zen-task-focus-display" });
 
 		const activeTask = this.tasks[0];
@@ -79,6 +88,26 @@ export class TaskCard {
 		if (activeTask.header) {
 			text.createSpan({ text: ` [${activeTask.header}]`, cls: "zen-task-header-tag" });
 		}
+		if (activeTask.pomodoros) {
+			text.createSpan({ text: ` 🍅${activeTask.pomodoros}`, cls: "zen-task-header-tag" });
+		}
+	}
+
+	/** Pulls in open checkboxes that were written into today's daily note by hand. */
+	private async importFromDailyNote(): Promise<void> {
+		const known = new Set(this.tasks.map((task) => task.content));
+		const filePath = this.plugin.dailyNotes.todayPath();
+		let added = 0;
+		for (const content of await this.plugin.dailyNotes.readOpenTasks()) {
+			if (known.has(content)) continue;
+			known.add(content);
+			this.tasks.push({ id: `${Date.now()}-${added}`, content, filePath });
+			added++;
+		}
+		new Notice(t(added > 0 ? "task.imported" : "task.nothingToImport", { count: added }));
+		if (added === 0) return;
+		await this.plugin.saveSettings();
+		this.refresh();
 	}
 
 	// --- Add task --------------------------------------------------------
@@ -204,6 +233,9 @@ export class TaskCard {
 		if (task.header) {
 			text.createSpan({ text: ` #${task.header}`, cls: "zen-task-header-tag" });
 		}
+		if (task.pomodoros) {
+			text.createSpan({ text: ` 🍅${task.pomodoros}`, cls: "zen-task-header-tag" });
+		}
 
 		const controls = row.createDiv({ cls: "zen-task-row-controls" });
 		if (index > 0) this.addControl(controls, "up", "arrow-up", t("task.moveUp"));
@@ -261,7 +293,7 @@ export class TaskCard {
 		this.timeouts.set(async () => {
 			const index = this.tasks.indexOf(task);
 			if (index < 0) return;
-			await this.plugin.dailyNotes.manageTask(task.content, task.header, "complete", task.filePath);
+			await this.plugin.dailyNotes.manageTask(task.content, task.header, "complete", task.filePath, task.pomodoros ?? 0);
 			this.tasks.splice(index, 1);
 			await this.plugin.saveSettings();
 			this.refresh();

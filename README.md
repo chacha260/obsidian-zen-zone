@@ -20,33 +20,39 @@ A focus companion for your Obsidian workspace: pomodoro timer, YouTube ambience 
 
 ## What it does
 
-**Zen Zone** puts a pomodoro timer, an ambient music player and a short task list into one side panel. The timer and the music are independent: run either one alone, or let the timer switch the music for you at every phase.
+**Zen Zone** puts a pomodoro timer, an ambient music player and a short task list into one side panel. The timer and the music are independent: run either one alone, or let the timer switch the music for you at every phase. Both keep going when the panel is closed.
 
 ## Features
 
 ### 🍅 Focus timer
 
-- **Full pomodoro run:** four focus blocks with short breaks, closing on a long break. Durations are configurable.
-- **Zen mode:** while the timer runs, the sidebars can collapse and the ribbon, tab headers and view headers can be hidden.
-- **Runs without the panel:** the session belongs to the plugin, not the view. Close the panel and the countdown continues in the status bar; select the status bar timer to bring the panel back.
+- **Configurable run:** 1 to 12 focus cycles with short breaks, closing on a long break. Every duration is yours to set.
+- **Your pace:** start breaks and focus phases automatically, or have the timer wait for you. Skip a phase at any time.
+- **Runs without the panel:** the countdown continues in the status bar; select it to bring the panel back.
 - **Sleep-proof:** the countdown tracks an absolute deadline, so it neither drifts nor stalls when your machine sleeps.
+- **Notifications:** phase changes raise a system notification when Obsidian is in the background.
 - **Transition sounds:** play an audio file from your vault at each phase change, with a configurable pause before the music resumes.
+- **Zen mode:** while the timer runs, the sidebars can collapse and the ribbon, tab headers and view headers can be hidden. Sidebars are reopened afterwards.
+- **Focus totals:** completed focus phases are counted per day; the panel shows today and the last seven days.
 
 ### 🎧 Ambient audio
 
-- **Background playback:** YouTube videos and playlists play through a hidden player.
-- **Transport controls:** skip, shuffle and repeat (off / all / one) across a playlist, with an independent volume slider.
-- **Per-cycle scheduling:** give each of the four cycles its own focus and break track.
+- **Two kinds of tracks:** a YouTube video or playlist, or an audio file or a folder of audio files in your vault. Local tracks work offline.
+- **Keeps playing:** music belongs to the plugin, not the panel, so it continues when the panel is closed.
+- **Transport controls:** previous, next, shuffle and repeat (off / all / one), with a volume slider. All of it is remembered.
+- **Per-cycle scheduling:** give each cycle its own focus and break track.
 - **Checkpoints:** name timestamps inside a track ("Morning", "Night") and jump to them with one tap.
-- **Lazy and self-releasing:** the player is created on your first play, never before, and is discarded after a configurable stretch of silence. Playback resumes from the same position.
-
-Music plays from the panel, so it stops when the panel is closed. The timer keeps running.
+- **Small floating video:** a YouTube track shows its video in a small player in the corner. You can turn this off in the settings.
+- **Lazy and self-releasing:** a player is created on your first play, never before, and is discarded after a configurable stretch of silence. Playback resumes from the same position.
 
 ### ✅ Tasks and daily note logging
 
-- **Current focus:** the top task is pinned above the list.
+- **Current focus:** the top task is pinned above the list, with a 🍅 count of the focus phases spent on it.
 - **Reorderable backlog:** drag and drop, or move tasks up and down.
-- **Daily note logging (optional):** adding a task appends a checkbox under a heading in today's daily note; completing it stamps the time; deleting it removes the line. A new daily note uses your Daily notes template when one is configured.
+- **Daily note logging (optional):** adding a task appends a checkbox under a heading in today's daily note; completing it stamps the time and the 🍅 count; deleting it removes the line.
+- **Import:** pull open checkboxes you wrote into today's daily note by hand into the task list.
+- **Focus log (optional):** each completed focus phase appends a line such as `- 09:00–09:25 🍅 Write report` to today's daily note.
+- A new daily note uses your Daily notes template when one is configured.
 
 ### 🌐 Languages
 
@@ -58,9 +64,12 @@ The interface follows Obsidian's language. English and Japanese are included.
 
 | Command | What it does |
 |:---|:---|
-| **Zen Zone: Open panel** | Opens the side panel. |
-| **Zen Zone: Start or pause the focus timer** | Starts, pauses or resumes the session. |
-| **Zen Zone: Reset the focus session** | Returns to the first cycle. |
+| **Open panel** | Opens the side panel. |
+| **Start or pause the focus timer** | Starts, pauses or resumes the session. |
+| **Skip to the next phase** | Ends the current phase early. |
+| **Reset the focus session** | Returns to the first cycle. |
+| **Play or pause the music** | Toggles playback. |
+| **Play the next track** | Moves on in the current playlist or folder. |
 
 No hotkeys are assigned by default. Set your own in **Settings → Hotkeys**.
 
@@ -68,8 +77,9 @@ No hotkeys are assigned by default. Set your own in **Settings → Hotkeys**.
 
 ## Network use and privacy
 
-- **YouTube:** music is streamed by embedding YouTube's player (`https://www.youtube.com/embed/…`) in a hidden frame. This is the only network access the plugin makes. Nothing is requested until you start playback, and nothing is requested at all if you only use the timer and tasks.
+- **YouTube:** YouTube tracks are streamed by embedding YouTube's player (`https://www.youtube.com/embed/…`). This is the only network access the plugin makes. Nothing is requested until you start playing a YouTube track, and nothing at all if you only use the timer, tasks and local audio.
 - When the player is active, YouTube receives what any embedded YouTube video receives: your IP address, the video or playlist being played, and YouTube's own cookies. YouTube's terms and privacy policy apply, and YouTube may show ads according to its own rules.
+- By default the video is shown in a small floating player. The setting **Show YouTube video** can turn that off; YouTube's terms expect an embedded player to stay visible, so that choice is yours to make.
 - The plugin loads no remote scripts into Obsidian. It controls the embedded player by messaging its frame.
 - No telemetry, no analytics, no account. Your notes and tasks never leave your vault.
 - The plugin writes only to its own settings and, when daily note logging is enabled, to your daily notes.
@@ -78,18 +88,18 @@ No hotkeys are assigned by default. Set your own in **Settings → Hotkeys**.
 
 ## Getting started
 
-**Requires Obsidian 1.5.0 or newer.** Works on desktop and mobile; the status bar timer is desktop only because mobile has no status bar.
+**Requires Obsidian 1.7.2 or newer.** Works on desktop and mobile; the status bar timer is desktop only because mobile has no status bar.
 
 ### Manual installation
 
-1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/chacha260/obsidian-zen-zone/releases).
+1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/chacha260/obsidian-zen-zone/releases/latest).
 2. Copy them into `<Vault>/.obsidian/plugins/zen-zone/`.
 3. Reload Obsidian and enable **Zen Zone** in **Settings → Community plugins**.
 
 ### First steps
 
 1. Select the ⚡ icon in the ribbon to open the panel.
-2. Open **Settings → Zen Zone** and add your tracks under **Playlist**. Paste a YouTube video URL or a playlist URL (one that contains `list=`).
+2. Open **Settings → Zen Zone** and add your tracks under **Playlist**. Paste a YouTube video or playlist URL (one that contains `list=`), or pick an audio file or folder from your vault.
 3. Choose the music for each cycle under **Cycle music**.
 4. Select **Start focus**.
 
@@ -114,7 +124,7 @@ The plugin is bundled from `src/`:
 | `src/i18n.ts` | Interface strings (English and Japanese) |
 | `src/constants.ts`, `src/types.ts`, `src/utils.ts`, `src/moment.ts`, `src/dom.ts` | Defaults, shared types and helpers |
 | `src/daily-note.ts`, `src/task-lines.ts` | Daily note access, and the pure line edits behind it |
-| `src/audio/` | The hidden YouTube player and the message protocol that drives it |
+| `src/audio/` | The audio engine, the YouTube player with its message protocol, and the local file player |
 | `src/view/` | The side panel: `zen-view` plus the task, timer and audio cards |
 | `src/settings/` | Settings tab and the track editor modal |
 | `tests/` | Unit tests for the pure modules |
@@ -123,9 +133,11 @@ All styling lives in `styles.css` so themes can override it.
 
 ### Releasing
 
-1. Run `npm version <new version>`; this updates `manifest.json` and `versions.json`.
-2. Push the commit and the tag (the tag is the bare version, with no leading `v`).
-3. The release workflow builds the plugin and opens a draft release with `main.js`, `manifest.json` and `styles.css` attached. Review and publish it.
+1. Run `npm version <new version>`. This updates `package.json`, `manifest.json` and `versions.json`, commits, and creates the tag (the bare version, with no leading `v`).
+2. Push the commit and the tag: `git push --follow-tags`.
+3. The **Release** workflow lints, tests and builds the plugin, then publishes a GitHub release with `main.js`, `manifest.json` and `styles.css` attached.
+
+The workflow can also be started by hand from the **Actions** tab. It then releases the version found in `manifest.json` from the selected branch, optionally as a draft.
 
 ## License
 

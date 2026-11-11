@@ -17,7 +17,9 @@ const HEADING = /^#{1,6}\s/;
 
 function taskLinePattern(taskContent: string, box: string, allowTimestamp: boolean): RegExp {
 	const stamp = allowTimestamp ? "(?:\\d{1,2}:\\d{2}\\s+)?" : "";
-	return new RegExp(`^([ \\t]*)[-*+]\\s+\\[${box}\\]\\s+${stamp}${escapeRegExp(taskContent)}\\s*$`);
+	// A completed line may carry a pomodoro count after the text.
+	const tally = allowTimestamp ? "(?:\\s+🍅\\d+)?" : "";
+	return new RegExp(`^([ \\t]*)[-*+]\\s+\\[${box}\\]\\s+${stamp}${escapeRegExp(taskContent)}${tally}\\s*$`, "u");
 }
 
 function unchanged(content: string): LineEdit {
@@ -26,11 +28,28 @@ function unchanged(content: string): LineEdit {
 
 /** Appends `- [ ] task` to the end of the section under `header`, creating the section if needed. */
 export function addTaskLine(content: string, taskContent: string, header: string): LineEdit {
-	const lines = content.split("\n");
 	const open = taskLinePattern(taskContent, " ", false);
-	if (lines.some((line) => open.test(line))) return unchanged(content);
+	if (content.split("\n").some((line) => open.test(line))) return unchanged(content);
+	return appendUnderHeading(content, `- [ ] ${taskContent}`, header);
+}
 
-	const line = `- [ ] ${taskContent}`;
+function findSection(lines: string[], header: string): { start: number; end: number } | null {
+	const headerPattern = new RegExp(`^#{1,6}\\s+${escapeRegExp(header)}\\s*$`, "i");
+	const start = lines.findIndex((candidate) => headerPattern.test(candidate));
+	if (start < 0) return null;
+	let end = lines.length;
+	for (let i = start + 1; i < lines.length; i++) {
+		if (HEADING.test(lines[i])) {
+			end = i;
+			break;
+		}
+	}
+	return { start, end };
+}
+
+/** Appends `line` to the end of the section under `header`, creating the section if needed. */
+export function appendUnderHeading(content: string, line: string, header: string): LineEdit {
+	const lines = content.split("\n");
 	const headerPattern = new RegExp(`^#{1,6}\\s+${escapeRegExp(header)}\\s*$`, "i");
 	const headerIndex = lines.findIndex((candidate) => headerPattern.test(candidate));
 
@@ -57,8 +76,20 @@ export function addTaskLine(content: string, taskContent: string, header: string
 	return { content: lines.join("\n"), changed: true };
 }
 
-/** Ticks the first open checkbox for the task and stamps it with `time`. */
-export function completeTaskLine(content: string, taskContent: string, time: string): LineEdit {
+/** The text of every open checkbox in the section under `header`, in order. */
+export function listOpenTasks(content: string, header: string): string[] {
+	const lines = content.split("\n");
+	const section = findSection(lines, header);
+	if (!section) return [];
+	const open = /^[ \t]*[-*+]\s+\[ \]\s+(.+?)\s*$/;
+	return lines
+		.slice(section.start + 1, section.end)
+		.map((line) => open.exec(line)?.[1])
+		.filter((text): text is string => Boolean(text));
+}
+
+/** Ticks the first open checkbox for the task and stamps it with `time`, plus an optional `suffix`. */
+export function completeTaskLine(content: string, taskContent: string, time: string, suffix = ""): LineEdit {
 	const lines = content.split("\n");
 	const open = taskLinePattern(taskContent, " ", false);
 	const index = lines.findIndex((line) => open.test(line));
@@ -66,7 +97,7 @@ export function completeTaskLine(content: string, taskContent: string, time: str
 
 	const indent = open.exec(lines[index])?.[1] ?? "";
 	const carriageReturn = lines[index].endsWith("\r") ? "\r" : "";
-	lines[index] = `${indent}- [x] ${time} ${taskContent}${carriageReturn}`;
+	lines[index] = `${indent}- [x] ${time} ${taskContent}${suffix}${carriageReturn}`;
 	return { content: lines.join("\n"), changed: true };
 }
 

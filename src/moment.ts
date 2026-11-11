@@ -6,7 +6,7 @@ export interface MomentLike {
 }
 
 interface MomentFactory {
-	(): MomentLike;
+	(input?: number): MomentLike;
 	locale(): string;
 }
 
@@ -17,6 +17,11 @@ const factory = moment as unknown as MomentFactory;
 /** The current time, as a moment. */
 export function now(): MomentLike {
 	return factory();
+}
+
+/** Formats an epoch-millisecond timestamp with a moment pattern. */
+export function formatClock(epochMs: number, pattern: string): string {
+	return factory(epochMs).format(pattern);
 }
 
 /** The app language as moment reports it, e.g. `en` or `ja`. */

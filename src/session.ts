@@ -1,14 +1,14 @@
 import { Notice } from "obsidian";
 import type ZenZonePlugin from "./main";
-import { CYCLE_COUNT } from "./constants";
 import { t } from "./i18n";
 import { MusicReference, SoundDurationKey, SoundPathKey, TimerState } from "./types";
 import { formatTime } from "./utils";
 
-/** What a session needs from the audio card. Absent while the Zen panel is closed. */
+/** What a session needs from the audio engine. */
 export interface SessionAudio {
 	loadTrack(ref: MusicReference, autoPlay?: boolean): void;
 	startPlayback(fromStart: boolean): void;
+	pausePlayback(): void;
 	markPlaying(): void;
 }
 
@@ -22,7 +22,7 @@ const PHASE_ICON: Record<TimerState, string> = {
 	[TimerState.Idle]: "⏳",
 	[TimerState.Focus]: "🔥",
 	[TimerState.ShortBreak]: "☕",
-	[TimerState.LongBreak]: "☕"
+	[TimerState.LongBreak]: "🌴"
 };
 
 /** Overshoot beyond this means the machine was asleep, which is worth saying out loud. */
@@ -49,14 +49,22 @@ export class FocusSession {
 	private inTransition = false;
 	/** True while the start cue plays, before the first focus phase begins. */
 	private starting = false;
+	/** False until the current phase has counted down for the first time. */
+	private phaseBegun = false;
+	/** When the current phase first started counting, in epoch milliseconds. */
+	private phaseStartedAt = 0;
+	/** Length the current phase was given when it began, in minutes. */
+	private phaseMinutes = 0;
 
 	private tickTimeoutId: number | null = null;
 	private transitionTimeoutId: number | null = null;
 
-	private audio: SessionAudio | null = null;
 	private listener: SessionListener | null = null;
 
-	constructor(private readonly plugin: ZenZonePlugin) {
+	constructor(
+		private readonly plugin: ZenZonePlugin,
+		private readonly audio: SessionAudio
+	) {
 		this.pausedRemainingMs = this.phaseDuration(TimerState.Focus);
 	}
 
@@ -66,6 +74,7 @@ export class FocusSession {
 	/** True while counting down, and while the start cue is leading into the first phase. */
 	get running(): boolean { return this.runningValue || this.starting; }
 	get cycleCount(): number { return this.cycleValue; }
+	get totalCycles(): number { return Math.max(1, this.plugin.settings.cycles); }
 	/** True once a session has started and has not been reset. */
 	get active(): boolean { return this.phaseValue !== TimerState.Idle; }
 
@@ -87,9 +96,8 @@ export class FocusSession {
 
 	// --- View attachment ---------------------------------------------------
 
-	attach(listener: SessionListener, audio: SessionAudio): void {
+	attach(listener: SessionListener): void {
 		this.listener = listener;
-		this.audio = audio;
 		listener.onStateChange();
 		listener.onTick(this.remainingSeconds);
 	}
@@ -97,7 +105,6 @@ export class FocusSession {
 	detach(listener: SessionListener): void {
 		if (this.listener !== listener) return;
 		this.listener = null;
-		this.audio = null;
 	}
 
 	// --- Controls ----------------------------------------------------------
@@ -119,14 +126,15 @@ export class FocusSession {
 
 		const begin = () => {
 			this.runningValue = true;
-			this.audio?.markPlaying();
+			this.audio.markPlaying();
 
 			if (this.phaseValue === TimerState.Idle) {
 				this.startCycle(TimerState.Focus);
 			} else {
+				this.markPhaseBegun();
 				this.resumeCountdown();
 				this.playSceneMusic(this.phaseValue);
-				this.audio?.startPlayback(false);
+				this.audio.startPlayback(false);
 			}
 
 			this.plugin.enterZenMode();
@@ -136,8 +144,9 @@ export class FocusSession {
 		if (this.phaseValue === TimerState.Idle) {
 			this.starting = true;
 			this.emitState();
-			this.playSequence("soundStart", "durationStart", this.plugin.settings.workMusic[0], () => {
+			this.playSequence("soundStart", "durationStart", this.plugin.settings.workMusic[0], (cuePlayed) => {
 				this.starting = false;
+				this.audio.startPlayback(cuePlayed);
 				begin();
 			});
 		} else {
@@ -181,11 +190,20 @@ export class FocusSession {
 		this.emitTime();
 	}
 
+	/** Ends the current phase early. A skipped focus phase is not counted as done. */
+	skip(): void {
+		if (!this.active || this.starting || this.inTransition) return;
+		if (!this.runningValue) {
+			this.runningValue = true;
+			this.plugin.enterZenMode();
+		}
+		this.handlePhaseComplete(true);
+	}
+
 	dispose(): void {
 		this.stopCountdown();
 		this.clearTransition();
 		this.listener = null;
-		this.audio = null;
 	}
 
 	// --- Countdown ---------------------------------------------------------
@@ -193,10 +211,20 @@ export class FocusSession {
 	private startCycle(phase: TimerState): void {
 		this.phaseValue = phase;
 		this.pausedRemainingMs = this.phaseDuration(phase);
+		this.phaseBegun = false;
+		this.markPhaseBegun();
 		this.runningValue = true;
 		this.playSceneMusic(phase);
 		this.resumeCountdown();
 		this.emitState();
+	}
+
+	/** Stamps the start of a phase the first time it counts down. */
+	private markPhaseBegun(): void {
+		if (this.phaseBegun) return;
+		this.phaseBegun = true;
+		this.phaseStartedAt = Date.now();
+		this.phaseMinutes = Math.round(this.pausedRemainingMs / 60_000);
 	}
 
 	private resumeCountdown(): void {
@@ -238,16 +266,18 @@ export class FocusSession {
 
 	// --- Phase transitions -------------------------------------------------
 
-	private handlePhaseComplete(): void {
+	private handlePhaseComplete(skipped = false): void {
 		this.stopCountdown();
 
 		if (this.phaseValue === TimerState.Focus) {
-			const isLastCycle = this.cycleValue >= CYCLE_COUNT - 1;
+			if (!skipped) void this.plugin.recordFocusSession(this.phaseStartedAt, this.phaseMinutes);
+			const isLastCycle = this.cycleValue >= this.totalCycles - 1;
 			const next = isLastCycle ? TimerState.LongBreak : TimerState.ShortBreak;
 			this.transitionTo(
 				next,
 				isLastCycle ? "soundFocusToLong" : "soundFocusToShort",
-				isLastCycle ? "durationFocusToLong" : "durationFocusToShort"
+				isLastCycle ? "durationFocusToLong" : "durationFocusToShort",
+				t(isLastCycle ? "notice.longBreak" : "notice.shortBreak")
 			);
 			return;
 		}
@@ -274,22 +304,37 @@ export class FocusSession {
 
 		this.phaseValue = next;
 		this.pausedRemainingMs = this.phaseDuration(finishing ? TimerState.Focus : next);
+		this.phaseBegun = false;
 		this.inTransition = true;
 		this.emitState();
 		this.emitTime();
 
 		const nextMusic = finishing ? null : this.musicForCycle(this.cycleValue, next);
-		this.playSequence(pathKey, durationKey, nextMusic, () => {
+		this.playSequence(pathKey, durationKey, nextMusic, (cuePlayed) => {
 			this.inTransition = false;
 
 			if (finishing) {
-				this.plugin.showBreakOverlay();
 				this.reset();
-				new Notice(t("notice.allComplete"));
+				this.audio.pausePlayback();
+				this.plugin.announce(t("notice.allComplete"));
 				return;
 			}
 
-			if (notice) new Notice(notice);
+			if (notice) this.plugin.announce(notice);
+
+			const { autoStartFocus, autoStartBreaks } = this.plugin.settings;
+			if (!(next === TimerState.Focus ? autoStartFocus : autoStartBreaks)) {
+				// Wait for the user: the phase is ready but nothing counts down yet.
+				this.runningValue = false;
+				this.audio.pausePlayback();
+				this.plugin.exitZenMode();
+				this.emitState();
+				this.emitTime();
+				return;
+			}
+
+			this.audio.startPlayback(cuePlayed);
+			this.markPhaseBegun();
 			this.playSceneMusic(next);
 			this.resumeCountdown();
 			this.emitState();
@@ -298,24 +343,24 @@ export class FocusSession {
 
 	/**
 	 * Plays the transition cue, queues the next track silently, then hands over
-	 * to `onComplete` once the cue has had its configured time.
+	 * to `onComplete` once the cue has had its configured time. `onComplete` is
+	 * told whether a cue was waited on, in which case the music starts afresh.
 	 */
 	private playSequence(
 		pathKey: SoundPathKey,
 		durationKey: SoundDurationKey,
 		nextMusicRef: MusicReference | null | undefined,
-		onComplete: () => void
+		onComplete: (cuePlayed: boolean) => void
 	): void {
 		const soundPath = this.plugin.settings[pathKey];
 		const durationSec = this.plugin.settings[durationKey];
 
 		this.plugin.playLocalSound(soundPath);
 		// autoPlay false: a queued track must not spin the player up on its own.
-		if (nextMusicRef) this.audio?.loadTrack(nextMusicRef, false);
+		if (nextMusicRef) this.audio.loadTrack(nextMusicRef, false);
 
 		if (!soundPath || durationSec <= 0) {
-			this.audio?.startPlayback(false);
-			onComplete();
+			onComplete(false);
 			return;
 		}
 
@@ -323,8 +368,7 @@ export class FocusSession {
 		this.clearTransition();
 		this.transitionTimeoutId = window.setTimeout(() => {
 			this.transitionTimeoutId = null;
-			this.audio?.startPlayback(true);
-			onComplete();
+			onComplete(true);
 		}, durationSec * 1000);
 	}
 
@@ -337,14 +381,14 @@ export class FocusSession {
 	// --- Music -------------------------------------------------------------
 
 	private musicForCycle(cycle: number, phase: TimerState): MusicReference | undefined {
-		const index = Math.min(cycle, CYCLE_COUNT - 1);
+		const index = Math.min(cycle, this.totalCycles - 1);
 		const schedule = phase === TimerState.Focus ? this.plugin.settings.workMusic : this.plugin.settings.breakMusic;
 		return schedule[index];
 	}
 
 	private playSceneMusic(phase: TimerState): void {
 		const ref = this.musicForCycle(this.cycleValue, phase);
-		if (ref) this.audio?.loadTrack(ref);
+		if (ref) this.audio.loadTrack(ref);
 	}
 
 	// --- Notification ------------------------------------------------------

@@ -4,16 +4,19 @@ import { t } from "../i18n";
 
 export interface TimerCardHandlers {
 	onToggle(): void;
+	onSkip(): void;
 	onReset(): void;
 }
 
-/** The timer card: phase label, cycle counter, countdown and its two buttons. */
+/** The timer card: phase label, cycle counter, countdown, its buttons and the focus totals. */
 export class TimerCard {
 	private readonly listeners = new DomListenerRegistry();
 	private displayEl: HTMLElement | null = null;
 	private statusLabelEl: HTMLElement | null = null;
 	private cycleIndicatorEl: HTMLElement | null = null;
 	private toggleBtn: HTMLButtonElement | null = null;
+	private skipBtn: HTMLButtonElement | null = null;
+	private statsEl: HTMLElement | null = null;
 
 	constructor(
 		private readonly parent: HTMLElement,
@@ -35,8 +38,14 @@ export class TimerCard {
 		this.setRunning(false, false);
 		this.listeners.add(this.toggleBtn, "click", () => this.handlers.onToggle());
 
+		this.skipBtn = controls.createEl("button", { cls: "zen-sub-btn zen-skip-btn", attr: { "aria-label": t("timer.skip") } });
+		setIcon(this.skipBtn, "skip-forward");
+		this.listeners.add(this.skipBtn, "click", () => this.handlers.onSkip());
+
 		const resetBtn = controls.createEl("button", { cls: "zen-sub-btn zen-reset-btn", text: t("timer.reset") });
 		this.listeners.add(resetBtn, "click", () => this.handlers.onReset());
+
+		this.statsEl = card.createDiv({ cls: "zen-timer-stats" });
 	}
 
 	setTime(text: string): void {
@@ -48,6 +57,10 @@ export class TimerCard {
 		this.cycleIndicatorEl?.setText(cycleText);
 	}
 
+	setStats(text: string): void {
+		this.statsEl?.setText(text);
+	}
+
 	/** `resumable` distinguishes a paused session from a fresh one. */
 	setRunning(running: boolean, resumable: boolean): void {
 		const btn = this.toggleBtn;
@@ -56,6 +69,8 @@ export class TimerCard {
 		setIcon(btn.createSpan({ cls: "zen-main-btn-icon" }), running ? "pause" : "timer");
 		btn.createSpan({ text: t(running ? "timer.pause" : resumable ? "timer.resume" : "timer.start") });
 		btn.toggleClass("is-active", running);
+		// There is nothing to skip before a session has started.
+		if (this.skipBtn) this.skipBtn.disabled = !resumable;
 	}
 
 	destroy(): void {
@@ -64,5 +79,7 @@ export class TimerCard {
 		this.statusLabelEl = null;
 		this.cycleIndicatorEl = null;
 		this.toggleBtn = null;
+		this.skipBtn = null;
+		this.statsEl = null;
 	}
 }

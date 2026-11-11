@@ -1,7 +1,7 @@
 import { App, ButtonComponent, Modal, Notice, Setting, setIcon } from "obsidian";
 import { t } from "../i18n";
 import { PlaylistItem } from "../types";
-import { extractYouTubeInfo } from "../utils";
+import { VaultPathSuggest } from "./vault-path-suggest";
 
 /** Add/edit dialog for a single playlist track and its checkpoints. */
 export class TrackEditorModal extends Modal {
@@ -10,6 +10,8 @@ export class TrackEditorModal extends Modal {
 	constructor(
 		app: App,
 		track: PlaylistItem | null,
+		/** Whether a source resolves to something the plugin can play. */
+		private readonly isPlayable: (source: string) => boolean,
 		private readonly onSubmit: (track: PlaylistItem) => void
 	) {
 		super(app);
@@ -29,9 +31,12 @@ export class TrackEditorModal extends Modal {
 			.addText((text) => text.setValue(this.track.title).onChange((value) => (this.track.title = value)));
 
 		new Setting(contentEl)
-			.setName(t("modal.url"))
-			.setDesc(t("modal.urlDesc"))
-			.addText((text) => text.setValue(this.track.url).onChange((value) => (this.track.url = value)));
+			.setName(t("modal.source"))
+			.setDesc(t("modal.sourceDesc"))
+			.addText((text) => {
+				new VaultPathSuggest(this.app, text.inputEl, true);
+				text.setValue(this.track.url).onChange((value) => (this.track.url = value));
+			});
 
 		new Setting(contentEl).setName(t("modal.checkpoints")).setHeading();
 		this.renderCheckpoints(contentEl.createDiv());
@@ -48,9 +53,8 @@ export class TrackEditorModal extends Modal {
 					new Notice(t("modal.required"));
 					return;
 				}
-				const info = extractYouTubeInfo(this.track.url);
-				if (!info.videoId && !info.listId) {
-					new Notice(t("modal.invalidUrl"));
+				if (!this.isPlayable(this.track.url)) {
+					new Notice(t("modal.invalidSource"));
 					return;
 				}
 				// Half-filled checkpoint rows would only show up as dead buttons.

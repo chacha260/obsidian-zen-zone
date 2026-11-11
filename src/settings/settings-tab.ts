@@ -1,16 +1,11 @@
 import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ZenZonePlugin from "../main";
-import {
-	CYCLE_COUNT,
-	DURATION_SETTING_KEY,
-	DurationKey,
-	SOUND_TRANSITIONS,
-	TIME_CONSTRAINTS
-} from "../constants";
+import { DURATION_SETTING_KEY, DurationKey, MAX_CYCLES, SOUND_TRANSITIONS, TIME_CONSTRAINTS } from "../constants";
 import { TranslationKey, t } from "../i18n";
-import { MusicReference, SoundPathKey } from "../types";
+import { MusicReference, SoundPathKey, ZenZoneSettings } from "../types";
 import { clamp } from "../utils";
 import { TrackEditorModal } from "./track-editor-modal";
+import { VaultPathSuggest } from "./vault-path-suggest";
 
 const DURATION_LABEL: Record<DurationKey, TranslationKey> = {
 	work: "settings.timer.work",
@@ -21,115 +16,81 @@ const DURATION_LABEL: Record<DurationKey, TranslationKey> = {
 /** Upper bound of the idle-release slider, in minutes. */
 const MAX_IDLE_RELEASE_MINUTES = 30;
 
-export class ZenZoneSettingTab extends PluginSettingTab {
-	/** Durations are staged here so the sliders only apply on "save". */
-	private draftDurations!: Record<DurationKey, number>;
+type BooleanKey = { [K in keyof ZenZoneSettings]: ZenZoneSettings[K] extends boolean ? K : never }[keyof ZenZoneSettings];
+type TextKey = "dailyNoteFolder" | "dailyNoteFormat" | "dailyNoteTargetHeader" | "sessionLogHeader";
 
+export class ZenZoneSettingTab extends PluginSettingTab {
 	constructor(app: App, private readonly plugin: ZenZonePlugin) {
 		super(app, plugin);
-		this.resetDraftDurations();
-	}
-
-	private resetDraftDurations(): void {
-		this.draftDurations = {
-			work: this.plugin.settings.workDuration,
-			shortBreak: this.plugin.settings.shortBreakDuration,
-			longBreak: this.plugin.settings.longBreakDuration
-		};
 	}
 
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		this.addGeneralSection(containerEl);
-		this.addDailyNoteSection(containerEl);
+		this.addBehaviourSection(containerEl);
 		this.addTimerSection(containerEl);
+		this.addDailyNoteSection(containerEl);
 		this.addSoundSection(containerEl);
+		this.addAudioSection(containerEl);
 		this.addCycleMusicSection(containerEl);
 		this.addPlaylistSection(containerEl);
 	}
 
-	// --- General ---------------------------------------------------------
-
-	private addGeneralSection(containerEl: HTMLElement): void {
-		this.addToggle(containerEl, t("settings.collapse.name"), t("settings.collapse.desc"), "autoCollapseSidebars");
-		this.addToggle(containerEl, t("settings.hideHeader.name"), t("settings.hideHeader.desc"), "hideHeader");
-		this.addToggle(containerEl, t("settings.statusBar.name"), t("settings.statusBar.desc"), "showStatusBarTimer");
-
-		new Setting(containerEl)
-			.setName(t("settings.idleRelease.name"))
-			.setDesc(t("settings.idleRelease.desc"))
-			.addSlider((slider) =>
-				slider
-					.setLimits(0, MAX_IDLE_RELEASE_MINUTES, 1)
-					.setValue(clamp(this.plugin.settings.audioIdleReleaseMinutes, 0, MAX_IDLE_RELEASE_MINUTES))
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.audioIdleReleaseMinutes = value;
-						await this.plugin.saveSettings();
-					})
-			);
+	private async save(): Promise<void> {
+		await this.plugin.saveSettings();
+		this.plugin.notifyDataChange();
 	}
+
+	// --- Building blocks -------------------------------------------------
 
 	private addToggle(
 		containerEl: HTMLElement,
-		name: string,
-		desc: string,
-		key: "autoCollapseSidebars" | "hideHeader" | "showStatusBarTimer" | "autoLogToDaily",
-		redraw = false
+		name: TranslationKey,
+		desc: TranslationKey,
+		key: BooleanKey,
+		after?: () => void
 	): void {
 		new Setting(containerEl)
-			.setName(name)
-			.setDesc(desc)
+			.setName(t(name))
+			.setDesc(t(desc))
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings[key]).onChange(async (value) => {
 					this.plugin.settings[key] = value;
-					await this.plugin.saveSettings();
-					if (redraw) this.display();
+					await this.save();
+					after?.();
 				})
 			);
 	}
 
-	// --- Daily note ------------------------------------------------------
-
-	private addDailyNoteSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName(t("settings.daily.heading")).setHeading();
-
-		this.addToggle(
-			containerEl,
-			t("settings.daily.enable.name"),
-			t("settings.daily.enable.desc"),
-			"autoLogToDaily",
-			true
-		);
-
-		if (!this.plugin.settings.autoLogToDaily) return;
-
-		this.addTextSetting(containerEl, t("settings.daily.folder.name"), t("settings.daily.folder.desc"), "DailyNotes", "dailyNoteFolder");
-		this.addTextSetting(containerEl, t("settings.daily.format.name"), t("settings.daily.format.desc"), "YYYY-MM-DD", "dailyNoteFormat");
-		this.addTextSetting(containerEl, t("settings.daily.header.name"), t("settings.daily.header.desc"), "Todo", "dailyNoteTargetHeader");
-	}
-
 	private addTextSetting(
 		containerEl: HTMLElement,
-		name: string,
-		desc: string,
+		name: TranslationKey,
+		desc: TranslationKey,
 		placeholder: string,
-		key: "dailyNoteFolder" | "dailyNoteFormat" | "dailyNoteTargetHeader"
+		key: TextKey
 	): void {
 		new Setting(containerEl)
-			.setName(name)
-			.setDesc(desc)
+			.setName(t(name))
+			.setDesc(t(desc))
 			.addText((text) =>
 				text
 					.setPlaceholder(placeholder)
 					.setValue(this.plugin.settings[key])
 					.onChange(async (value) => {
 						this.plugin.settings[key] = value.trim();
-						await this.plugin.saveSettings();
+						await this.save();
 					})
 			);
+	}
+
+	// --- Behaviour -------------------------------------------------------
+
+	private addBehaviourSection(containerEl: HTMLElement): void {
+		this.addToggle(containerEl, "settings.collapse.name", "settings.collapse.desc", "autoCollapseSidebars");
+		this.addToggle(containerEl, "settings.hideHeader.name", "settings.hideHeader.desc", "hideHeader");
+		this.addToggle(containerEl, "settings.statusBar.name", "settings.statusBar.desc", "showStatusBarTimer");
+		this.addToggle(containerEl, "settings.notify.name", "settings.notify.desc", "systemNotifications");
 	}
 
 	// --- Timer -----------------------------------------------------------
@@ -137,94 +98,106 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	private addTimerSection(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName(t("settings.timer.heading")).setHeading();
 
+		new Setting(containerEl)
+			.setName(t("settings.cycles.name"))
+			.setDesc(t("settings.cycles.desc"))
+			.addSlider((slider) =>
+				slider
+					.setLimits(1, MAX_CYCLES, 1)
+					.setValue(this.plugin.settings.cycles)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.cycles = value;
+						this.plugin.fitMusicSchedules();
+						await this.save();
+						// The music schedule below has one block per cycle.
+						this.display();
+					})
+			);
+
 		for (const key of Object.keys(TIME_CONSTRAINTS) as DurationKey[]) {
 			this.addDurationSetting(containerEl, key);
 		}
 
-		const footer = containerEl.createDiv({ cls: "zen-setting-apply-container" });
-		new ButtonComponent(footer)
-			.setButtonText(t("settings.timer.apply"))
-			.setCta()
-			.onClick(() => void this.saveDurations());
+		this.addToggle(containerEl, "settings.autoBreaks.name", "settings.autoBreaks.desc", "autoStartBreaks");
+		this.addToggle(containerEl, "settings.autoFocus.name", "settings.autoFocus.desc", "autoStartFocus");
 	}
 
 	private addDurationSetting(containerEl: HTMLElement, key: DurationKey): void {
 		const limits = TIME_CONSTRAINTS[key];
-		const setting = new Setting(containerEl)
+		const settingKey = DURATION_SETTING_KEY[key];
+
+		new Setting(containerEl)
 			.setName(t(DURATION_LABEL[key]))
-			.setDesc(t("settings.timer.range", limits));
-
-		let numberInput: HTMLInputElement | null = null;
-		let sliderInput: HTMLInputElement | null = null;
-
-		setting.addSlider((slider) => {
-			sliderInput = slider.sliderEl;
-			slider
-				.setLimits(limits.min, limits.max, 1)
-				.setValue(this.draftDurations[key])
-				.setDynamicTooltip()
-				.onChange((value) => {
-					this.draftDurations[key] = value;
-					if (numberInput) numberInput.value = value.toString();
+			.setDesc(t("settings.timer.range", limits))
+			.addText((text) => {
+				text.inputEl.type = "number";
+				text.inputEl.min = limits.min.toString();
+				text.inputEl.max = limits.max.toString();
+				text.inputEl.addClass("zen-duration-input");
+				text.setValue(this.plugin.settings[settingKey].toString()).onChange(async (value) => {
+					const parsed = parseInt(value, 10);
+					if (isNaN(parsed)) return;
+					this.plugin.settings[settingKey] = clamp(parsed, limits.min, limits.max);
+					await this.save();
+					this.plugin.session.refreshIdleDuration();
 				});
-		});
-
-		setting.addText((text) => {
-			numberInput = text.inputEl;
-			text.inputEl.type = "number";
-			text.inputEl.addClass("zen-duration-input");
-			text.setValue(this.draftDurations[key].toString()).onChange((value) => {
-				const parsed = parseInt(value, 10);
-				if (isNaN(parsed)) return;
-				this.draftDurations[key] = parsed;
-				if (sliderInput) sliderInput.value = parsed.toString();
+				// Show what was actually stored once the field is left.
+				text.inputEl.addEventListener("blur", () => text.setValue(this.plugin.settings[settingKey].toString()));
 			});
-		});
 	}
 
-	private async saveDurations(): Promise<void> {
-		for (const key of Object.keys(TIME_CONSTRAINTS) as DurationKey[]) {
-			const limits = TIME_CONSTRAINTS[key];
-			this.plugin.settings[DURATION_SETTING_KEY[key]] = clamp(this.draftDurations[key], limits.min, limits.max);
+	// --- Daily note ------------------------------------------------------
+
+	private addDailyNoteSection(containerEl: HTMLElement): void {
+		new Setting(containerEl).setName(t("settings.daily.heading")).setHeading();
+
+		const redraw = () => this.display();
+		this.addToggle(containerEl, "settings.daily.enable.name", "settings.daily.enable.desc", "autoLogToDaily", redraw);
+		this.addToggle(containerEl, "settings.logSessions.name", "settings.logSessions.desc", "logSessionsToDaily", redraw);
+
+		const { autoLogToDaily, logSessionsToDaily } = this.plugin.settings;
+		if (!autoLogToDaily && !logSessionsToDaily) return;
+
+		this.addTextSetting(containerEl, "settings.daily.folder.name", "settings.daily.folder.desc", "DailyNotes", "dailyNoteFolder");
+		this.addTextSetting(containerEl, "settings.daily.format.name", "settings.daily.format.desc", "YYYY-MM-DD", "dailyNoteFormat");
+		if (autoLogToDaily) {
+			this.addTextSetting(containerEl, "settings.daily.header.name", "settings.daily.header.desc", "Todo", "dailyNoteTargetHeader");
 		}
-		await this.plugin.saveSettings();
-		this.resetDraftDurations();
-		this.plugin.session.refreshIdleDuration();
-		this.display();
-		new Notice(t("settings.timer.saved"));
+		if (logSessionsToDaily) {
+			this.addTextSetting(containerEl, "settings.logHeader.name", "settings.logHeader.desc", "Focus log", "sessionLogHeader");
+		}
 	}
 
 	// --- Transition sounds -----------------------------------------------
 
 	private addSoundSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName(t("settings.sound.heading")).setHeading();
-		containerEl.createDiv({
-			cls: "setting-item-description",
-			text: t("settings.sound.desc")
-		});
+		new Setting(containerEl).setName(t("settings.sound.heading")).setDesc(t("settings.sound.desc")).setHeading();
 
 		for (const { nameKey, pathKey, durationKey } of SOUND_TRANSITIONS) {
 			new Setting(containerEl)
 				.setName(t(nameKey))
 				.addText((text) => {
 					const markValidity = () => this.markPathValidity(text.inputEl, this.plugin.settings[pathKey]);
+					new VaultPathSuggest(this.app, text.inputEl, false);
 					text.setPlaceholder(t("settings.sound.pathPlaceholder"))
 						.setValue(this.plugin.settings[pathKey])
 						.onChange(async (value) => {
 							this.plugin.settings[pathKey] = value.trim();
-							await this.plugin.saveSettings();
+							await this.save();
 							markValidity();
 						});
 					markValidity();
 				})
 				.addText((text) => {
 					text.inputEl.type = "number";
+					text.inputEl.min = "0";
 					text.inputEl.addClass("zen-duration-input");
 					text.setPlaceholder(t("settings.sound.secondsPlaceholder"))
 						.setValue(this.plugin.settings[durationKey].toString())
 						.onChange(async (value) => {
 							this.plugin.settings[durationKey] = Math.max(0, parseInt(value, 10) || 0);
-							await this.plugin.saveSettings();
+							await this.save();
 						});
 				})
 				.addExtraButton((btn) =>
@@ -254,21 +227,41 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 		this.plugin.playLocalSound(path);
 	}
 
+	// --- Audio -----------------------------------------------------------
+
+	private addAudioSection(containerEl: HTMLElement): void {
+		new Setting(containerEl).setName(t("settings.audio.heading")).setHeading();
+
+		this.addToggle(containerEl, "settings.video.name", "settings.video.desc", "showVideo", () =>
+			this.plugin.audio.refreshVideoVisibility()
+		);
+
+		new Setting(containerEl)
+			.setName(t("settings.idleRelease.name"))
+			.setDesc(t("settings.idleRelease.desc"))
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, MAX_IDLE_RELEASE_MINUTES, 1)
+					.setValue(clamp(this.plugin.settings.audioIdleReleaseMinutes, 0, MAX_IDLE_RELEASE_MINUTES))
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.audioIdleReleaseMinutes = value;
+						await this.save();
+					})
+			);
+	}
+
 	// --- Per-cycle music -------------------------------------------------
 
 	private addCycleMusicSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName(t("settings.music.heading")).setHeading();
-		containerEl.createDiv({
-			cls: "setting-item-description",
-			text: t("settings.music.desc", { count: CYCLE_COUNT })
-		});
+		new Setting(containerEl).setName(t("settings.music.heading")).setDesc(t("settings.music.desc")).setHeading();
 
-		for (let cycle = 0; cycle < CYCLE_COUNT; cycle++) {
-			const isLast = cycle === CYCLE_COUNT - 1;
+		const { cycles, workMusic, breakMusic } = this.plugin.settings;
+		for (let cycle = 0; cycle < cycles; cycle++) {
 			const cycleName = t("settings.music.cycle", { number: cycle + 1 });
-			const breakName = t(isLast ? "settings.music.longBreak" : "settings.music.shortBreak");
-			this.addMusicSetting(containerEl, `${cycleName}: ${t("settings.music.focus")}`, this.plugin.settings.workMusic[cycle]);
-			this.addMusicSetting(containerEl, `${cycleName}: ${breakName}`, this.plugin.settings.breakMusic[cycle]);
+			const breakName = t(cycle === cycles - 1 ? "settings.music.longBreak" : "settings.music.shortBreak");
+			this.addMusicSetting(containerEl, `${cycleName}: ${t("settings.music.focus")}`, workMusic[cycle]);
+			this.addMusicSetting(containerEl, `${cycleName}: ${breakName}`, breakMusic[cycle]);
 		}
 	}
 
@@ -281,7 +274,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 			dropdown.setValue(targetRef.trackIndex.toString()).onChange(async (value) => {
 				targetRef.trackIndex = parseInt(value, 10);
 				targetRef.checkpointIndex = -1;
-				await this.plugin.saveSettings();
+				await this.save();
 				// Only the checkpoint list depends on this; redrawing the whole
 				// tab here would rebuild every option in every cycle.
 				if (checkpointDropdown) this.fillCheckpointOptions(checkpointDropdown, targetRef);
@@ -293,7 +286,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 			this.fillCheckpointOptions(dropdown, targetRef);
 			dropdown.onChange(async (value) => {
 				targetRef.checkpointIndex = parseInt(value, 10);
-				await this.plugin.saveSettings();
+				await this.save();
 			});
 		});
 	}
@@ -311,15 +304,17 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 	private addPlaylistSection(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName(t("settings.playlist.heading")).setDesc(t("settings.playlist.desc")).setHeading();
 
+		const isPlayable = (source: string) => this.plugin.audio.resolveSource({ title: "", url: source }) !== null;
+
 		this.plugin.settings.playlistData.forEach((track, index) => {
 			new Setting(containerEl)
 				.setName(track.title)
 				.setDesc(track.url)
 				.addButton((btn) =>
 					btn.setIcon("pencil").setTooltip(t("settings.playlist.edit")).onClick(() => {
-						new TrackEditorModal(this.app, track, async (updated) => {
+						new TrackEditorModal(this.app, track, isPlayable, async (updated) => {
 							this.plugin.settings.playlistData[index] = updated;
-							await this.plugin.saveSettings();
+							await this.save();
 							this.display();
 						}).open();
 					})
@@ -332,7 +327,7 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 						.onClick(async () => {
 							this.plugin.settings.playlistData.splice(index, 1);
 							this.plugin.repairMusicSchedules(index);
-							await this.plugin.saveSettings();
+							await this.save();
 							this.display();
 							new Notice(t("settings.playlist.deleted"));
 						})
@@ -344,9 +339,9 @@ export class ZenZoneSettingTab extends PluginSettingTab {
 			.setButtonText(t("settings.playlist.add"))
 			.setCta()
 			.onClick(() => {
-				new TrackEditorModal(this.app, null, async (track) => {
+				new TrackEditorModal(this.app, null, isPlayable, async (track) => {
 					this.plugin.settings.playlistData.push(track);
-					await this.plugin.saveSettings();
+					await this.save();
 					this.display();
 				}).open();
 			});

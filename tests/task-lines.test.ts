@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addTaskLine, completeTaskLine, deleteTaskLine } from "../src/task-lines";
+import { addTaskLine, appendUnderHeading, completeTaskLine, deleteTaskLine, listOpenTasks } from "../src/task-lines";
 
 test("add: appends to the end of the target section", () => {
 	const note = "# Day\n\n## Todo\n- [ ] a\n\n## Notes\ntext\n";
@@ -63,4 +63,24 @@ test("delete: does nothing when only a lookalike exists", () => {
 test("CRLF notes keep their line endings", () => {
 	const note = "## Todo\r\n- [ ] a\r\n";
 	assert.equal(completeTaskLine(note, "a", "09:00").content, "## Todo\r\n- [x] 09:00 a\r\n");
+});
+
+test("append: adds any line under a heading, creating it when missing", () => {
+	assert.equal(
+		appendUnderHeading("# Day\n\n## Focus log\n- 09:00–09:25 🍅 a\n", "- 09:30–09:55 🍅 b", "Focus log").content,
+		"# Day\n\n## Focus log\n- 09:00–09:25 🍅 a\n- 09:30–09:55 🍅 b\n"
+	);
+	assert.equal(appendUnderHeading("# Day\n", "- x", "Focus log").content, "# Day\n\n## Focus log\n- x\n");
+});
+
+test("list: returns open tasks of the section only", () => {
+	const note = "## Todo\n- [ ] a\n- [x] 09:00 done\n  - [ ] nested b\ntext\n\n## Other\n- [ ] c\n";
+	assert.deepEqual(listOpenTasks(note, "Todo"), ["a", "nested b"]);
+	assert.deepEqual(listOpenTasks(note, "Missing"), []);
+});
+
+test("complete: appends the pomodoro tally, and delete still finds the line", () => {
+	const done = completeTaskLine("- [ ] write\n", "write", "10:00", " 🍅3").content;
+	assert.equal(done, "- [x] 10:00 write 🍅3\n");
+	assert.equal(deleteTaskLine(done, "write").content, "");
 });

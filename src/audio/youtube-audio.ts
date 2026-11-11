@@ -1,5 +1,5 @@
 import { TimeoutRegistry } from "../dom";
-import { RepeatMode, YouTubePlayer, YouTubePlayerEvent } from "../types";
+import { AudioBackend, RepeatMode, TrackSource, YouTubePlayer, YouTubePlayerEvent } from "../types";
 import { YouTubeIframePlayer } from "./youtube-iframe";
 
 /** YouTube IFrame Player API state codes. */
@@ -17,12 +17,15 @@ const DELAY = {
 } as const;
 
 /**
- * A hidden YouTube player used as a background audio source.
+ * A YouTube embed used as an audio source. How visible it is on screen is up
+ * to the host element it is created in.
  *
  * Playback info is pushed from the embed's own messages rather than polled, and every delayed action is tracked so nothing fires after
  * {@link destroy}.
  */
-export class YouTubeAudio {
+export class YouTubeAudio implements AudioBackend {
+	readonly kind = "youtube" as const;
+
 	private player: YouTubePlayer | null = null;
 	private isReady = false;
 	private destroyed = false;
@@ -77,8 +80,8 @@ export class YouTubeAudio {
 		}
 
 		this.player = new YouTubeIframePlayer(host, {
-			height: "0",
-			width: "0",
+			height: "100%",
+			width: "100%",
 			videoId: videoId ?? undefined,
 			playerVars,
 			events: {
@@ -166,10 +169,6 @@ export class YouTubeAudio {
 		this.applyRepeatMode();
 	}
 
-	getRepeatMode(): RepeatMode {
-		return this.repeatMode;
-	}
-
 	private applyRepeatMode(): void {
 		if (!this.isReady || typeof this.player?.setLoop !== "function") return;
 		this.player.setLoop(this.repeatMode !== RepeatMode.Off);
@@ -184,7 +183,15 @@ export class YouTubeAudio {
 		this.timeouts.set(() => this.player?.seekTo(0, true), DELAY.seekAfterPause);
 	}
 
-	loadVideoOrPlaylist(videoId: string | null, listId: string | null): void {
+	load(source: TrackSource): void {
+		if (source.kind === "youtube") this.loadVideoOrPlaylist(source.videoId, source.listId);
+	}
+
+	getSource(): TrackSource {
+		return { kind: "youtube", videoId: this.currentVideoId, listId: this.currentListId };
+	}
+
+	private loadVideoOrPlaylist(videoId: string | null, listId: string | null): void {
 		if (!this.isReady || !this.player) return;
 		if (videoId === this.currentVideoId && listId === this.currentListId) return;
 
@@ -264,10 +271,6 @@ export class YouTubeAudio {
 		} catch {
 			return 0;
 		}
-	}
-
-	getCurrentTrackInfo(): { videoId: string | null; listId: string | null } {
-		return { videoId: this.currentVideoId, listId: this.currentListId };
 	}
 
 	// --- Teardown --------------------------------------------------------
