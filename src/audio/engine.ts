@@ -32,6 +32,12 @@ export interface AudioListener {
 	onAudioChange(): void;
 }
 
+const REPEAT_NOTICE = {
+	[RepeatMode.Off]: "audio.repeatOff",
+	[RepeatMode.All]: "audio.repeatAll",
+	[RepeatMode.One]: "audio.repeatOne"
+} as const;
+
 function sourceKey(source: TrackSource): string {
 	return source.kind === "youtube" ? `yt:${source.videoId ?? ""}:${source.listId ?? ""}` : `local:${source.path}`;
 }
@@ -255,6 +261,7 @@ export class AudioEngine implements SessionAudio {
 	toggleShuffle(): void {
 		this.plugin.settings.shuffle = !this.shuffle;
 		this.backend?.setShuffle(this.shuffle);
+		new Notice(t(this.shuffle ? "audio.shuffleOn" : "audio.shuffleOff"));
 		void this.plugin.saveSettings();
 		this.emit();
 	}
@@ -263,6 +270,7 @@ export class AudioEngine implements SessionAudio {
 		const next = { [RepeatMode.Off]: RepeatMode.All, [RepeatMode.All]: RepeatMode.One, [RepeatMode.One]: RepeatMode.Off };
 		this.plugin.settings.repeatMode = next[this.repeatMode];
 		this.backend?.setRepeatMode(this.repeatMode);
+		new Notice(t(REPEAT_NOTICE[this.repeatMode]));
 		void this.plugin.saveSettings();
 		this.emit();
 	}

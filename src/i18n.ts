@@ -153,7 +153,9 @@ const en = {
 	"modal.invalidSource": "Enter a YouTube URL, or pick an audio file or folder from your vault.",
 	"settings.sound.fileDesc": "Audio file in your vault to play at this point. Leave empty for none.",
 	"settings.sound.wait": "{name}: wait",
-	"settings.sound.waitDesc": "Seconds the music waits while the sound plays."
+	"settings.sound.waitDesc": "Seconds the music waits while the sound plays.",
+	"audio.shuffleOn": "Shuffle: on",
+	"audio.shuffleOff": "Shuffle: off"
 };
 
 export type TranslationKey = keyof typeof en;
@@ -302,7 +304,9 @@ const ja: Record<TranslationKey, string> = {
 	"modal.invalidSource": "YouTube の URL を入力するか、保管庫内の音声ファイル・フォルダを選んでください。",
 	"settings.sound.fileDesc": "この切り替え時に鳴らす保管庫内の音声ファイル。空欄で無音。",
 	"settings.sound.wait": "{name}: 待機時間",
-	"settings.sound.waitDesc": "効果音の再生中、音楽を待機させる秒数。"
+	"settings.sound.waitDesc": "効果音の再生中、音楽を待機させる秒数。",
+	"audio.shuffleOn": "シャッフル: オン",
+	"audio.shuffleOff": "シャッフル: オフ"
 };
 
 const LOCALES: Record<string, Record<TranslationKey, string>> = { en, ja };
