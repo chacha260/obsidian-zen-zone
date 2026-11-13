@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clamp, extractYouTubeInfo, formatTime, parseTimeString } from "../src/utils";
+import { clamp, extractYouTubeInfo, formatTime, parseTimeString, taskTally } from "../src/utils";
 
 void test("parseTimeString", () => {
 	assert.equal(parseTimeString("90"), 90);
@@ -27,4 +27,11 @@ void test("extractYouTubeInfo", () => {
 	assert.deepEqual(extractYouTubeInfo("https://www.youtube.com/watch?v=jfKfPfyJRdk&list=PLabc"), { videoId: "jfKfPfyJRdk", listId: "PLabc" });
 	assert.deepEqual(extractYouTubeInfo("jfKfPfyJRdk"), { videoId: "jfKfPfyJRdk", listId: null });
 	assert.deepEqual(extractYouTubeInfo("not a url"), { videoId: null, listId: null });
+});
+
+void test("taskTally", () => {
+	assert.equal(taskTally({}), "");
+	assert.equal(taskTally({ pomodoros: 2 }), "🍅2");
+	assert.equal(taskTally({ estimate: 4 }), "🍅0/4");
+	assert.equal(taskTally({ pomodoros: 5, estimate: 4 }), "🍅5/4");
 });

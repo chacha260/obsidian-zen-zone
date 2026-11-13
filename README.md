@@ -47,12 +47,20 @@ A focus companion for your Obsidian workspace: pomodoro timer, YouTube ambience 
 
 ### ✅ Tasks and daily note logging
 
-- **Current focus:** the top task is pinned above the list, with a 🍅 count of the focus phases spent on it.
+- **Current focus:** the top task is shown above the list. Select any other task to make it the current one.
+- **Estimates:** give a task an expected number of pomodoros and watch the tally (`🍅2/4`) as focus phases complete. It turns to a warning colour once the estimate is used up.
+- **Edit in place:** rename a task or change its estimate without leaving the panel; the daily note follows.
+- **Undo:** completing or deleting a task offers an undo, which also puts the daily note back.
 - **Reorderable backlog:** drag and drop, or move tasks up and down.
-- **Daily note logging (optional):** adding a task appends a checkbox under a heading in today's daily note; completing it stamps the time and the 🍅 count; deleting it removes the line.
+- **Daily note logging (optional):** adding a task appends a checkbox under a heading in today's daily note; completing it stamps the time and the 🍅 tally; deleting it removes the line.
 - **Import:** pull open checkboxes you wrote into today's daily note by hand into the task list.
 - **Focus log (optional):** each completed focus phase appends a line such as `- 09:00–09:25 🍅 Write report` to today's daily note.
 - A new daily note uses your Daily notes template when one is configured.
+
+### 🧭 Panel
+
+- The timer sits at the top, with a ring that empties as the phase runs and one dot per cycle.
+- The task and music sections fold away; the panel remembers which ones you closed.
 
 ### 🌐 Languages
 

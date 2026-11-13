@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addTaskLine, appendUnderHeading, completeTaskLine, deleteTaskLine, listOpenTasks } from "../src/task-lines";
+import {
+	addTaskLine,
+	appendUnderHeading,
+	completeTaskLine,
+	deleteTaskLine,
+	listOpenTasks,
+	renameTaskLine,
+	reopenTaskLine
+} from "../src/task-lines";
 
 void test("add: appends to the end of the target section", () => {
 	const note = "# Day\n\n## Todo\n- [ ] a\n\n## Notes\ntext\n";
@@ -83,4 +91,23 @@ void test("complete: appends the pomodoro tally, and delete still finds the line
 	const done = completeTaskLine("- [ ] write\n", "write", "10:00", " 🍅3").content;
 	assert.equal(done, "- [x] 10:00 write 🍅3\n");
 	assert.equal(deleteTaskLine(done, "write").content, "");
+});
+
+void test("complete: a tally with an estimate is written and still found by delete and reopen", () => {
+	const done = completeTaskLine("- [ ] write\n", "write", "10:00", " 🍅2/4").content;
+	assert.equal(done, "- [x] 10:00 write 🍅2/4\n");
+	assert.equal(reopenTaskLine(done, "write").content, "- [ ] write\n");
+	assert.equal(deleteTaskLine(done, "write").content, "");
+});
+
+void test("reopen: leaves lookalikes and open tasks alone", () => {
+	assert.equal(reopenTaskLine("- [x] 09:00 send mail\n", "mail").changed, false);
+	assert.equal(reopenTaskLine("- [ ] mail\n", "mail").changed, false);
+	assert.equal(reopenTaskLine("  - [x] 09:00 mail\n", "mail").content, "  - [ ] mail\n");
+});
+
+void test("rename: rewrites the exact open task in place", () => {
+	const note = "## Todo\n- [ ] send mail\n  - [ ] mail\n";
+	assert.equal(renameTaskLine(note, "mail", "post $1").content, "## Todo\n- [ ] send mail\n  - [ ] post $1\n");
+	assert.equal(renameTaskLine(note, "missing", "x").changed, false);
 });

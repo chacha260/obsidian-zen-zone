@@ -8,9 +8,13 @@ export interface TimerCardHandlers {
 	onReset(): void;
 }
 
-/** The timer card: phase label, cycle counter, countdown, its buttons and the focus totals. */
+const RING_RADIUS = 54;
+
+/** The timer card: phase label, cycle dots, a countdown inside a progress ring, its buttons and the focus totals. */
 export class TimerCard {
 	private readonly listeners = new DomListenerRegistry();
+	private cardEl: HTMLElement | null = null;
+	private ringEl: HTMLElement | null = null;
 	private displayEl: HTMLElement | null = null;
 	private statusLabelEl: HTMLElement | null = null;
 	private cycleIndicatorEl: HTMLElement | null = null;
@@ -25,12 +29,20 @@ export class TimerCard {
 
 	render(initialTime: string): void {
 		const card = this.parent.createDiv({ cls: "zen-card zen-timer-card" });
+		this.cardEl = card;
 
 		const metaRow = card.createDiv({ cls: "zen-timer-meta" });
 		this.statusLabelEl = metaRow.createDiv({ cls: "zen-status-label", text: t("phase.ready") });
 		this.cycleIndicatorEl = metaRow.createDiv({ cls: "zen-cycle-indicator" });
 
-		this.displayEl = card.createDiv({ cls: "zen-timer-display", text: initialTime });
+		const ring = card.createDiv({ cls: "zen-timer-ring" });
+		this.ringEl = ring;
+		const svg = ring.createSvg("svg", { attr: { viewBox: "0 0 120 120", "aria-hidden": "true" } });
+		const circle = { cx: "60", cy: "60", r: RING_RADIUS.toString() };
+		svg.createSvg("circle", { cls: "zen-ring-track", attr: circle });
+		// pathLength makes the stroke maths independent of the radius.
+		svg.createSvg("circle", { cls: "zen-ring-progress", attr: { ...circle, pathLength: "1" } });
+		this.displayEl = ring.createDiv({ cls: "zen-timer-display", text: initialTime });
 
 		const controls = card.createDiv({ cls: "zen-controls" });
 
@@ -42,7 +54,8 @@ export class TimerCard {
 		setIcon(this.skipBtn, "skip-forward");
 		this.listeners.add(this.skipBtn, "click", () => this.handlers.onSkip());
 
-		const resetBtn = controls.createEl("button", { cls: "zen-sub-btn zen-reset-btn", text: t("timer.reset") });
+		const resetBtn = controls.createEl("button", { cls: "zen-sub-btn zen-reset-btn", attr: { "aria-label": t("timer.reset") } });
+		setIcon(resetBtn, "rotate-ccw");
 		this.listeners.add(resetBtn, "click", () => this.handlers.onReset());
 
 		this.statsEl = card.createDiv({ cls: "zen-timer-stats" });
@@ -52,9 +65,28 @@ export class TimerCard {
 		this.displayEl?.setText(text);
 	}
 
-	setStatus(label: string, cycleText: string): void {
+	/** `fraction` is how much of the phase is left, from 1 down to 0. */
+	setProgress(fraction: number): void {
+		this.ringEl?.style.setProperty("--zen-progress", fraction.toFixed(4));
+	}
+
+	/**
+	 * Shows the phase and one dot per cycle. `currentCycle` is the zero-based
+	 * cycle in progress, or -1 before a session has started.
+	 */
+	setStatus(label: string, currentCycle: number, totalCycles: number, cycleText: string, onBreak: boolean): void {
 		this.statusLabelEl?.setText(label);
-		this.cycleIndicatorEl?.setText(cycleText);
+		this.cardEl?.toggleClass("is-break", onBreak);
+
+		const dots = this.cycleIndicatorEl;
+		if (!dots) return;
+		dots.empty();
+		dots.ariaLabel = cycleText;
+		for (let cycle = 0; cycle < totalCycles; cycle++) {
+			const dot = dots.createSpan({ cls: "zen-cycle-dot" });
+			dot.toggleClass("is-done", cycle < currentCycle);
+			dot.toggleClass("is-current", cycle === currentCycle);
+		}
 	}
 
 	setStats(text: string): void {
@@ -75,6 +107,8 @@ export class TimerCard {
 
 	destroy(): void {
 		this.listeners.clear();
+		this.cardEl = null;
+		this.ringEl = null;
 		this.displayEl = null;
 		this.statusLabelEl = null;
 		this.cycleIndicatorEl = null;

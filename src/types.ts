@@ -30,6 +30,8 @@ export interface ZenTask {
 	filePath?: string;
 	/** Focus phases finished while this task was the current one. */
 	pomodoros?: number;
+	/** Focus phases the task is expected to take. */
+	estimate?: number;
 }
 
 /** What one day of focus added up to. */
@@ -38,7 +40,7 @@ export interface DayStats {
 	minutes: number;
 }
 
-export type DailyTaskAction = "add" | "complete" | "delete";
+export type DailyTaskAction = "add" | "complete" | "delete" | "reopen";
 
 export enum TimerState { Idle, Focus, ShortBreak, LongBreak }
 export enum RepeatMode { Off, All, One }
@@ -106,6 +108,8 @@ export interface ZenZoneSettings {
 	shuffle: boolean;
 	repeatMode: RepeatMode;
 	tasks: ZenTask[];
+	/** Panel sections the user has folded away. */
+	collapsedSections: string[];
 	/** Focus totals per day, keyed by `YYYY-MM-DD`. */
 	history: Record<string, DayStats>;
 	logSessionsToDaily: boolean;
