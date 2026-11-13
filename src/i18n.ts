@@ -166,7 +166,13 @@ const en = {
 	"task.estimate": "Estimated pomodoros",
 	"task.estimatePlaceholder": "🍅 est.",
 	"section.tasks": "Tasks",
-	"section.audio": "Music"
+	"section.audio": "Music",
+	"task.carryOver": "{count} task(s) from earlier days",
+	"task.carryOverAction": "Move to today",
+	"task.carriedOver": "Moved {count} task(s) to today's daily note.",
+	"task.doneToday": "Done today ({count})",
+	"task.reopen": "Reopen task",
+	"timer.dayStats": "{day}: {sessions} 🍅 · {minutes} min"
 };
 
 export type TranslationKey = keyof typeof en;
@@ -328,7 +334,13 @@ const ja: Record<TranslationKey, string> = {
 	"task.estimate": "予定ポモドーロ数",
 	"task.estimatePlaceholder": "🍅 予定",
 	"section.tasks": "タスク",
-	"section.audio": "音楽"
+	"section.audio": "音楽",
+	"task.carryOver": "前日以前のタスクが{count}件あります",
+	"task.carryOverAction": "今日へ移す",
+	"task.carriedOver": "{count}件のタスクを今日のデイリーノートへ移しました。",
+	"task.doneToday": "今日完了したタスク({count})",
+	"task.reopen": "タスクを未完了に戻す",
+	"timer.dayStats": "{day}: {sessions} 🍅 · {minutes}分"
 };
 
 const LOCALES: Record<string, Record<TranslationKey, string>> = { en, ja };

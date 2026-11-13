@@ -75,6 +75,7 @@ export const DEFAULT_SETTINGS: ZenZoneSettings = {
 	shuffle: false,
 	repeatMode: RepeatMode.Off,
 	tasks: [],
+	doneTasks: [],
 	collapsedSections: [],
 	history: {},
 	logSessionsToDaily: false,

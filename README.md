@@ -28,12 +28,12 @@ A focus companion for your Obsidian workspace: pomodoro timer, YouTube ambience 
 
 - **Configurable run:** 1 to 12 focus cycles with short breaks, closing on a long break. Every duration is yours to set.
 - **Your pace:** start breaks and focus phases automatically, or have the timer wait for you. Skip a phase at any time.
-- **Runs without the panel:** the countdown continues in the status bar; select it to bring the panel back.
+- **Runs without the panel:** the status bar shows the countdown and the current task; select it for a menu to pause, skip, reset, control the music or open the panel.
 - **Sleep-proof:** the countdown tracks an absolute deadline, so it neither drifts nor stalls when your machine sleeps.
 - **Notifications:** phase changes raise a system notification when Obsidian is in the background.
 - **Transition sounds:** play an audio file from your vault at each phase change, with a configurable pause before the music resumes.
 - **Zen mode:** while the timer runs, the sidebars can collapse and the ribbon, tab headers and view headers can be hidden. Sidebars are reopened afterwards.
-- **Focus totals:** completed focus phases are counted per day; the panel shows today and the last seven days.
+- **Focus totals:** completed focus phases are counted per day; the panel shows today's total and a bar chart of the last seven days.
 
 ### 🎧 Ambient audio
 
@@ -53,6 +53,8 @@ A focus companion for your Obsidian workspace: pomodoro timer, YouTube ambience 
 - **Undo:** completing or deleting a task offers an undo, which also puts the daily note back.
 - **Reorderable backlog:** drag and drop, or move tasks up and down.
 - **Daily note logging (optional):** adding a task appends a checkbox under a heading in today's daily note; completing it stamps the time and the 🍅 tally; deleting it removes the line.
+- **Done today:** tasks you completed today stay listed under the backlog and can be reopened.
+- **Carry-over:** tasks still filed in an earlier day's note can be moved to today's note in one step; the old line is marked as forwarded (`- [>]`).
 - **Import:** pull open checkboxes you wrote into today's daily note by hand into the task list.
 - **Focus log (optional):** each completed focus phase appends a line such as `- 09:00–09:25 🍅 Write report` to today's daily note.
 - A new daily note uses your Daily notes template when one is configured.

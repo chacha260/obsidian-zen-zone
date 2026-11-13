@@ -24,6 +24,14 @@ export function formatClock(epochMs: number, pattern: string): string {
 	return factory(epochMs).format(pattern);
 }
 
+/** The start of the local day `daysAgo` days back, in epoch milliseconds. */
+export function startOfDay(daysAgo = 0): number {
+	const date = new Date();
+	date.setHours(0, 0, 0, 0);
+	date.setDate(date.getDate() - daysAgo);
+	return date.getTime();
+}
+
 /** The app language as moment reports it, e.g. `en` or `ja`. */
 export function appLocale(): string {
 	return factory.locale();
