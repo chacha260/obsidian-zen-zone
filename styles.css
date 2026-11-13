@@ -8,14 +8,6 @@
 	font-family: var(--font-interface);
 }
 
-.zen-header h2 {
-	text-align: center;
-	margin: 10px 0 5px 0;
-	font-weight: 300;
-	letter-spacing: 0.05em;
-	color: var(--text-muted);
-}
-
 /* --- Card Styling --- */
 .zen-card {
 	background-color: var(--background-secondary);
@@ -99,18 +91,9 @@
 	display: flex;
 	flex-direction: column;
 	gap: 5px;
-	/* The inline height is the user's own resize; keep it free to grow. */
-	min-height: 100px;
-	max-height: none;
-	overflow: auto;
-	resize: vertical;
-	padding-bottom: 10px;
-}
-
-.zen-task-list-wrapper::-webkit-resizer {
-	background-color: var(--interactive-accent);
-	border-radius: 4px;
-	border: 2px solid var(--background-secondary);
+	/* Grows with the backlog, then scrolls. */
+	max-height: 280px;
+	overflow-y: auto;
 }
 
 .zen-task-header-input {
@@ -161,24 +144,51 @@
 	cursor: pointer;
 }
 
-.zen-task-text {
-	flex-grow: 1;
+.zen-task-text,
+.zen-task-text:hover,
+.zen-task-text:focus {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: auto;
+	padding: 0;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-normal);
+	text-align: left;
+	display: block;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	/* ★修正: リスト内の文字も本文フォント */
 	font-family: var(--font-text);
+	font-size: inherit;
+	cursor: pointer;
+}
+
+.zen-task-text:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+	border-radius: 4px;
 }
 
 .zen-task-row-controls {
-	display: flex;
-	gap: 4px;
-	opacity: 0.5;
-	transition: opacity 0.2s;
+	display: none;
+	flex: 0 0 auto;
+	gap: 2px;
 }
 
-.zen-task-row:hover .zen-task-row-controls {
-	opacity: 1;
+/* Row actions stay out of the way until the row is pointed at or tabbed into,
+   so the task name gets the width of a narrow sidebar. */
+.zen-task-row:hover .zen-task-row-controls,
+.zen-task-row:focus-within .zen-task-row-controls,
+.zen-task-row.is-editing .zen-task-row-controls {
+	display: flex;
+}
+
+@media (hover: none) {
+	.zen-task-row-controls {
+		display: flex;
+	}
 }
 
 .zen-task-control-btn {
@@ -221,13 +231,12 @@
 }
 
 .zen-timer-display {
-	font-size: 3.5rem;
+	position: relative;
+	font-size: 2.4rem;
 	font-weight: 800;
-	/* ★修正: テーマで設定された「等幅フォント」を使用 */
 	font-family: var(--font-text);
 	color: var(--text-normal);
 	line-height: 1;
-	margin: 10px 0;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -291,13 +300,14 @@
 }
 
 .zen-reset-btn {
-	background-color: #c0392b;
-	color: #fff;
+	color: var(--text-muted);
 }
 
 /* --- Audio Card --- */
 .zen-audio-card {
-	padding: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
 }
 
 /* The YouTube iframe is a 0x0 audio-only source. */
@@ -592,4 +602,235 @@ body.zen-mode-active.zen-hide-header .workspace-tab-header-container {
 
 .zen-main-btn-icon {
 	display: flex;
+}
+
+/* --- Timer ring and cycle dots --- */
+.zen-timer-ring {
+	--zen-progress: 1;
+	position: relative;
+	width: 176px;
+	max-width: 100%;
+	aspect-ratio: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 4px 0 10px;
+}
+
+.zen-timer-ring svg {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	/* Start the arc at twelve o'clock. */
+	transform: rotate(-90deg);
+}
+
+.zen-ring-track,
+.zen-ring-progress {
+	fill: none;
+	stroke-width: 6;
+}
+
+.zen-ring-track {
+	stroke: var(--background-modifier-border);
+}
+
+.zen-ring-progress {
+	stroke: var(--interactive-accent);
+	stroke-linecap: round;
+	stroke-dasharray: 1;
+	stroke-dashoffset: calc(1 - var(--zen-progress));
+	transition: stroke-dashoffset 1s linear;
+}
+
+.zen-timer-card.is-break .zen-ring-progress {
+	stroke: var(--color-green);
+}
+
+.zen-timer-meta {
+	align-items: center;
+}
+
+.zen-cycle-indicator {
+	display: flex;
+	gap: 5px;
+}
+
+.zen-cycle-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	border: 1px solid var(--text-faint);
+}
+
+.zen-cycle-dot.is-done {
+	background: var(--text-muted);
+	border-color: var(--text-muted);
+}
+
+.zen-cycle-dot.is-current {
+	background: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
+/* --- Collapsible sections --- */
+.zen-section-header,
+.zen-section-header:hover {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	height: auto;
+	padding: 0;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: 0.8em;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	cursor: pointer;
+}
+
+.zen-section-header:hover {
+	color: var(--text-normal);
+}
+
+.zen-section-chevron {
+	display: flex;
+	transition: transform 0.15s ease;
+}
+
+.zen-section.is-collapsed .zen-section-chevron {
+	transform: rotate(-90deg);
+}
+
+.zen-section-body {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.zen-section.is-collapsed .zen-section-body {
+	display: none;
+}
+
+/* --- Task extras --- */
+.zen-task-input-wrapper {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.zen-task-input-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.zen-task-input-row .zen-task-add-input {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.zen-task-input-row .zen-task-estimate-input,
+.zen-task-row .zen-task-estimate-input {
+	flex: 0 0 5.5em;
+	width: 5.5em;
+}
+
+.zen-task-option-row {
+	font-size: 0.85em;
+}
+
+.zen-task-header-input.is-hidden {
+	display: none;
+}
+
+.zen-task-add-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.zen-task-focus-tally {
+	display: flex;
+	justify-content: center;
+}
+
+.zen-task-tally {
+	flex: 0 0 auto;
+	font-size: 0.8em;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.zen-task-tally.is-over {
+	color: var(--text-warning);
+}
+
+.zen-task-row.is-current {
+	box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+
+.zen-task-row.is-editing {
+	gap: 6px;
+}
+
+.zen-task-row.is-editing .zen-task-edit-content {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.zen-task-row.is-dragging {
+	opacity: 0.5;
+}
+
+.zen-undo-btn {
+	margin-left: 10px;
+}
+
+/* --- Current task ---
+   The first task is shown above the input as a larger row. */
+.zen-task-focus-wrapper .zen-task-row {
+	background: transparent;
+	padding: 4px 0 0;
+	box-shadow: none;
+}
+
+.zen-task-focus-wrapper .zen-task-text {
+	font-size: 1.15em;
+	font-weight: 600;
+	white-space: normal;
+	cursor: default;
+}
+
+.zen-task-focus-wrapper .zen-task-text-placeholder {
+	text-align: center;
+}
+
+.zen-task-focus-heading {
+	justify-content: space-between;
+}
+
+/* --- Compact timer controls --- */
+.zen-controls {
+	width: 100%;
+	align-items: center;
+	gap: 8px;
+}
+
+.zen-controls .zen-main-btn {
+	margin-right: 0;
+}
+
+.zen-controls .zen-sub-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0;
+	flex: 0 0 auto;
 }

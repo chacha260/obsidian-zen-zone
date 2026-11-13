@@ -18,7 +18,7 @@ const HEADING = /^#{1,6}\s/;
 function taskLinePattern(taskContent: string, box: string, allowTimestamp: boolean): RegExp {
 	const stamp = allowTimestamp ? "(?:\\d{1,2}:\\d{2}\\s+)?" : "";
 	// A completed line may carry a pomodoro count after the text.
-	const tally = allowTimestamp ? "(?:\\s+🍅\\d+)?" : "";
+	const tally = allowTimestamp ? "(?:\\s+🍅\\d+(?:/\\d+)?)?" : "";
 	return new RegExp(`^([ \\t]*)[-*+]\\s+\\[${box}\\]\\s+${stamp}${escapeRegExp(taskContent)}${tally}\\s*$`, "u");
 }
 
@@ -98,6 +98,32 @@ export function completeTaskLine(content: string, taskContent: string, time: str
 	const indent = open.exec(lines[index])?.[1] ?? "";
 	const carriageReturn = lines[index].endsWith("\r") ? "\r" : "";
 	lines[index] = `${indent}- [x] ${time} ${taskContent}${suffix}${carriageReturn}`;
+	return { content: lines.join("\n"), changed: true };
+}
+
+/** Turns a completed, stamped line back into an open checkbox. */
+export function reopenTaskLine(content: string, taskContent: string): LineEdit {
+	const lines = content.split("\n");
+	const done = taskLinePattern(taskContent, "[xX]", true);
+	const index = lines.findIndex((line) => done.test(line));
+	if (index < 0) return unchanged(content);
+
+	const indent = done.exec(lines[index])?.[1] ?? "";
+	const carriageReturn = lines[index].endsWith("\r") ? "\r" : "";
+	lines[index] = `${indent}- [ ] ${taskContent}${carriageReturn}`;
+	return { content: lines.join("\n"), changed: true };
+}
+
+/** Rewrites the text of an open task, keeping its place and indentation. */
+export function renameTaskLine(content: string, oldContent: string, newContent: string): LineEdit {
+	const lines = content.split("\n");
+	const open = taskLinePattern(oldContent, " ", false);
+	const index = lines.findIndex((line) => open.test(line));
+	if (index < 0) return unchanged(content);
+
+	const indent = open.exec(lines[index])?.[1] ?? "";
+	const carriageReturn = lines[index].endsWith("\r") ? "\r" : "";
+	lines[index] = `${indent}- [ ] ${newContent}${carriageReturn}`;
 	return { content: lines.join("\n"), changed: true };
 }
 

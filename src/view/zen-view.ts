@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, WorkspaceLeaf, setIcon } from "obsidian";
 import type ZenZonePlugin from "../main";
 import { VIEW_TYPE_ZEN } from "../constants";
 import { TranslationKey, t } from "../i18n";
@@ -42,11 +42,8 @@ export class ZenView extends ItemView implements SessionListener {
 		container.empty();
 		container.addClass("zen-view-container");
 
-		container.createDiv({ cls: "zen-header" }).createEl("h2", { text: "Zen Zone" });
-
-		this.taskCard = new TaskCard(container.createDiv({ cls: "zen-card zen-task-card" }), this.plugin);
-		this.taskCard.render();
-
+		// The timer leads: it is what gets glanced at, and it stays put while
+		// the sections below it fold away.
 		const session = this.plugin.session;
 		this.timerCard = new TimerCard(container.createDiv(), {
 			onToggle: () => session.toggle(),
@@ -55,7 +52,10 @@ export class ZenView extends ItemView implements SessionListener {
 		});
 		this.timerCard.render(formatTime(session.remainingSeconds));
 
-		this.audioCard = new AudioCard(container.createDiv(), this.plugin);
+		this.taskCard = new TaskCard(this.createSection(container, "tasks", t("section.tasks"), "zen-task-card"), this.plugin);
+		this.taskCard.render();
+
+		this.audioCard = new AudioCard(this.createSection(container, "audio", t("section.audio")), this.plugin);
 		this.audioCard.render();
 
 		container.createDiv({ text: t("view.footer"), cls: "zen-footer-note" });
@@ -63,6 +63,31 @@ export class ZenView extends ItemView implements SessionListener {
 		session.attach(this);
 		this.stopListening = this.plugin.onDataChange(() => this.onDataChange());
 		this.renderStats();
+	}
+
+	/** A card with a header that folds its body away; the choice is remembered. */
+	private createSection(container: HTMLElement, key: string, title: string, bodyClass = ""): HTMLElement {
+		const collapsed = this.plugin.settings.collapsedSections;
+		const card = container.createDiv({ cls: "zen-card zen-section" });
+		const header = card.createEl("button", { cls: "zen-section-header" });
+		setIcon(header.createSpan({ cls: "zen-section-chevron" }), "chevron-down");
+		header.createSpan({ text: title });
+		const body = card.createDiv({ cls: `zen-section-body ${bodyClass}`.trim() });
+
+		const apply = () => {
+			const isCollapsed = collapsed.includes(key);
+			card.toggleClass("is-collapsed", isCollapsed);
+			header.setAttribute("aria-expanded", String(!isCollapsed));
+		};
+		apply();
+
+		this.registerDomEvent(header, "click", () => {
+			if (collapsed.includes(key)) collapsed.remove(key);
+			else collapsed.push(key);
+			apply();
+			void this.plugin.saveSettings();
+		});
+		return body;
 	}
 
 	/** Tasks, history or the playlist changed somewhere else. */
@@ -104,6 +129,7 @@ export class ZenView extends ItemView implements SessionListener {
 
 	onTick(remainingSeconds: number): void {
 		this.timerCard?.setTime(formatTime(remainingSeconds));
+		this.timerCard?.setProgress(this.plugin.session.progress);
 	}
 
 	onStateChange(): void {
@@ -113,7 +139,10 @@ export class ZenView extends ItemView implements SessionListener {
 
 		const phaseLabel = t(PHASE_LABEL[active ? phase : TimerState.Idle]);
 		const label = active && !running ? `⏸ ${phaseLabel}` : phaseLabel;
-		const current = active ? Math.min(cycleCount + 1, totalCycles) : 0;
-		this.timerCard?.setStatus(label, t("timer.cycle", { current, total: totalCycles }));
+		const currentCycle = active ? Math.min(cycleCount, totalCycles - 1) : -1;
+		const cycleText = t("timer.cycle", { current: currentCycle + 1, total: totalCycles });
+		const onBreak = active && phase !== TimerState.Focus;
+		this.timerCard?.setStatus(label, currentCycle, totalCycles, cycleText, onBreak);
+		this.timerCard?.setProgress(this.plugin.session.progress);
 	}
 }

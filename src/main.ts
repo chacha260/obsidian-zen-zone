@@ -84,6 +84,7 @@ export default class ZenZonePlugin extends Plugin {
 		merged.cycles = clamp(Math.round(Number(merged.cycles)) || DEFAULT_SETTINGS.cycles, 1, MAX_CYCLES);
 		merged.volume = clamp(Number(merged.volume) || 0, 0, 1);
 		merged.tasks = Array.isArray(merged.tasks) ? merged.tasks : [];
+		merged.collapsedSections = Array.isArray(merged.collapsedSections) ? merged.collapsedSections : [];
 		merged.playlistData = Array.isArray(merged.playlistData) ? merged.playlistData : [];
 		merged.history = merged.history && typeof merged.history === "object" ? { ...merged.history } : {};
 

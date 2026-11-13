@@ -83,6 +83,12 @@ export class FocusSession {
 		return Math.max(0, this.endsAt - Date.now());
 	}
 
+	/** How much of the current phase is left, from 1 (untouched) down to 0 (over). */
+	get progress(): number {
+		const total = this.phaseDuration(this.active ? this.phaseValue : TimerState.Focus);
+		return total > 0 ? Math.min(1, Math.max(0, this.remainingMs / total)) : 0;
+	}
+
 	get remainingSeconds(): number {
 		return Math.ceil(this.remainingMs / 1000);
 	}

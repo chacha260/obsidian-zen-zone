@@ -1,7 +1,15 @@
 import { App, Notice, TFile, normalizePath } from "obsidian";
 import { t } from "./i18n";
 import { now } from "./moment";
-import { addTaskLine, appendUnderHeading, completeTaskLine, deleteTaskLine, listOpenTasks } from "./task-lines";
+import {
+	addTaskLine,
+	appendUnderHeading,
+	completeTaskLine,
+	deleteTaskLine,
+	listOpenTasks,
+	renameTaskLine,
+	reopenTaskLine
+} from "./task-lines";
 import { DailyTaskAction, ZenZoneSettings } from "./types";
 
 interface DailyNotesInternalPlugin {
@@ -41,7 +49,7 @@ export class DailyNoteService {
 		customHeader: string | undefined,
 		action: DailyTaskAction,
 		specificFilePath?: string,
-		pomodoros = 0
+		tally = ""
 	): Promise<void> {
 		if (!this.settings.autoLogToDaily) return;
 
@@ -58,8 +66,7 @@ export class DailyNoteService {
 					return edit.content;
 				}
 				case "complete": {
-					const suffix = pomodoros > 0 ? ` 🍅${pomodoros}` : "";
-					const edit = completeTaskLine(content, taskContent, now().format("HH:mm"), suffix);
+					const edit = completeTaskLine(content, taskContent, now().format("HH:mm"), tally ? ` ${tally}` : "");
 					notices.push(t(edit.changed ? "daily.completed" : "daily.notFound", { note: note.basename }));
 					return edit.content;
 				}
@@ -68,8 +75,21 @@ export class DailyNoteService {
 					if (edit.changed) notices.push(t("daily.deleted", { note: note.basename }));
 					return edit.content;
 				}
+				case "reopen": {
+					// A line that is gone or was edited by hand is put back rather than lost.
+					const edit = reopenTaskLine(content, taskContent);
+					return edit.changed ? edit.content : addTaskLine(content, taskContent, targetHeader).content;
+				}
 			}
 		});
+	}
+
+	/** Follows a renamed task into the daily note it was filed in. */
+	async renameTask(oldContent: string, newContent: string, specificFilePath?: string): Promise<void> {
+		if (!this.settings.autoLogToDaily || oldContent === newContent) return;
+		const note = await this.openNote(specificFilePath ?? this.todayPath(), false);
+		if (!note) return;
+		await this.edit(note, (content) => renameTaskLine(content, oldContent, newContent).content);
 	}
 
 	/** Appends a line under `header` in today's daily note, creating the note if needed. */

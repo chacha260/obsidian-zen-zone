@@ -40,7 +40,7 @@ export class AudioCard implements AudioListener {
 	}
 
 	render(): void {
-		const card = this.parent.createDiv({ cls: "zen-card zen-audio-card" });
+		const card = this.parent.createDiv({ cls: "zen-audio-card" });
 		this.renderTrackSelect(card);
 		this.checkpointsEl = card.createDiv({ cls: "zen-checkpoints-area" });
 		const topControls = card.createDiv({ cls: "zen-audio-top-controls" });

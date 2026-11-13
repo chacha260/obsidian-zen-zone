@@ -28,9 +28,8 @@ const en = {
 	"view.footer": "Set durations, sounds and per-cycle music in the plugin settings.",
 
 	// Task card
-	"task.current": "🔥 Current focus",
+	"task.current": "Current focus",
 	"task.empty": "No active tasks. Great job! 🎉",
-	"task.completed": "Task completed! 🎉",
 	"task.headerTooltip": "Target heading (optional)",
 	"task.placeholder": "Add a new task…",
 	"task.add": "Add task",
@@ -155,7 +154,19 @@ const en = {
 	"settings.sound.wait": "{name}: wait",
 	"settings.sound.waitDesc": "Seconds the music waits while the sound plays.",
 	"audio.shuffleOn": "Shuffle: on",
-	"audio.shuffleOff": "Shuffle: off"
+	"audio.shuffleOff": "Shuffle: off",
+	"task.complete": "Complete task",
+	"task.completedNotice": "Completed: {task}",
+	"task.deletedNotice": "Deleted: {task}",
+	"task.undo": "Undo",
+	"task.edit": "Edit task",
+	"task.save": "Save",
+	"task.cancel": "Cancel",
+	"task.makeCurrent": "Make this the current task",
+	"task.estimate": "Estimated pomodoros",
+	"task.estimatePlaceholder": "🍅 est.",
+	"section.tasks": "Tasks",
+	"section.audio": "Music"
 };
 
 export type TranslationKey = keyof typeof en;
@@ -184,9 +195,8 @@ const ja: Record<TranslationKey, string> = {
 	"timer.reset": "リセット",
 	"view.footer": "時間・効果音・サイクルごとの音楽はプラグイン設定で変更できます。",
 
-	"task.current": "🔥 現在のタスク",
+	"task.current": "現在のタスク",
 	"task.empty": "タスクはありません。お疲れさまでした 🎉",
-	"task.completed": "タスク完了!🎉",
 	"task.headerTooltip": "追加先の見出し(任意)",
 	"task.placeholder": "タスクを追加…",
 	"task.add": "タスクを追加",
@@ -306,7 +316,19 @@ const ja: Record<TranslationKey, string> = {
 	"settings.sound.wait": "{name}: 待機時間",
 	"settings.sound.waitDesc": "効果音の再生中、音楽を待機させる秒数。",
 	"audio.shuffleOn": "シャッフル: オン",
-	"audio.shuffleOff": "シャッフル: オフ"
+	"audio.shuffleOff": "シャッフル: オフ",
+	"task.complete": "タスクを完了",
+	"task.completedNotice": "完了: {task}",
+	"task.deletedNotice": "削除: {task}",
+	"task.undo": "元に戻す",
+	"task.edit": "タスクを編集",
+	"task.save": "保存",
+	"task.cancel": "キャンセル",
+	"task.makeCurrent": "現在のタスクにする",
+	"task.estimate": "予定ポモドーロ数",
+	"task.estimatePlaceholder": "🍅 予定",
+	"section.tasks": "タスク",
+	"section.audio": "音楽"
 };
 
 const LOCALES: Record<string, Record<TranslationKey, string>> = { en, ja };

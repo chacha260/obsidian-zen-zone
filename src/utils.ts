@@ -18,6 +18,13 @@ export function formatTime(seconds: number): string {
 	return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** The pomodoro tally shown next to a task: `🍅2/4`, `🍅2`, or nothing when there is neither. */
+export function taskTally(task: { pomodoros?: number; estimate?: number }): string {
+	const done = task.pomodoros ?? 0;
+	if (task.estimate) return `🍅${done}/${task.estimate}`;
+	return done > 0 ? `🍅${done}` : "";
+}
+
 export function clamp(value: number, min: number, max: number): number {
 	return Math.min(Math.max(value, min), max);
 }
