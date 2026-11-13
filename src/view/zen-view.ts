@@ -98,14 +98,19 @@ export class ZenView extends ItemView implements SessionListener {
 	}
 
 	private renderStats(): void {
-		const { today, week } = this.plugin.focusStats();
+		const { today, week, days } = this.plugin.focusStats();
 		this.timerCard?.setStats(
 			t("timer.stats", {
 				todaySessions: today.sessions,
 				todayMinutes: today.minutes,
 				weekSessions: week.sessions,
 				weekMinutes: week.minutes
-			})
+			}),
+			days.map((day) => ({
+				label: day.label,
+				minutes: day.minutes,
+				tooltip: t("timer.dayStats", { day: day.label, sessions: day.sessions, minutes: day.minutes })
+			}))
 		);
 	}
 

@@ -127,6 +127,19 @@ export function renameTaskLine(content: string, oldContent: string, newContent: 
 	return { content: lines.join("\n"), changed: true };
 }
 
+/** Marks an open task as moved on to a later note (`- [>] task`), the bullet-journal way. */
+export function forwardTaskLine(content: string, taskContent: string): LineEdit {
+	const lines = content.split("\n");
+	const open = taskLinePattern(taskContent, " ", false);
+	const index = lines.findIndex((line) => open.test(line));
+	if (index < 0) return unchanged(content);
+
+	const indent = open.exec(lines[index])?.[1] ?? "";
+	const carriageReturn = lines[index].endsWith("\r") ? "\r" : "";
+	lines[index] = `${indent}- [>] ${taskContent}${carriageReturn}`;
+	return { content: lines.join("\n"), changed: true };
+}
+
 /** Removes the task's line, whether it is still open or already completed and stamped. */
 export function deleteTaskLine(content: string, taskContent: string): LineEdit {
 	const lines = content.split("\n");

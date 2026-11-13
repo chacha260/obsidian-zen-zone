@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import { Menu, Notice, Plugin, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { AudioEngine } from "./audio/engine";
 import {
 	DEFAULT_BREAK_REF,
@@ -10,12 +10,15 @@ import {
 } from "./constants";
 import { DailyNoteService } from "./daily-note";
 import { t } from "./i18n";
-import { formatClock, now } from "./moment";
+import { formatClock, now, startOfDay } from "./moment";
 import { FocusSession } from "./session";
 import { DayStats, MusicReference, ZenZoneSettings } from "./types";
 import { clamp } from "./utils";
 import { ZenView } from "./view/zen-view";
 import { ZenZoneSettingTab } from "./settings/settings-tab";
+
+/** Longest task name shown in the status bar before it is cut short. */
+const STATUS_TASK_LENGTH = 28;
 
 const ZEN_MODE_CLASSES = ["zen-mode-active", "zen-hide-header", "zen-keep-status-bar"];
 
@@ -41,7 +44,7 @@ export default class ZenZonePlugin extends Plugin {
 
 		this.statusBarItem = this.addStatusBarItem();
 		this.statusBarItem.addClass("mod-clickable");
-		this.registerDomEvent(this.statusBarItem, "click", () => void this.activateView());
+		this.registerDomEvent(this.statusBarItem, "click", (event) => this.showStatusBarMenu(event));
 		this.updateStatusBar("");
 
 		this.audio = new AudioEngine(this);
@@ -84,6 +87,9 @@ export default class ZenZonePlugin extends Plugin {
 		merged.cycles = clamp(Math.round(Number(merged.cycles)) || DEFAULT_SETTINGS.cycles, 1, MAX_CYCLES);
 		merged.volume = clamp(Number(merged.volume) || 0, 0, 1);
 		merged.tasks = Array.isArray(merged.tasks) ? merged.tasks : [];
+		// Only today's completions are kept; yesterday's are history in the daily note.
+		const today = startOfDay();
+		merged.doneTasks = Array.isArray(merged.doneTasks) ? merged.doneTasks.filter((done) => done?.task && done.at >= today) : [];
 		merged.collapsedSections = Array.isArray(merged.collapsedSections) ? merged.collapsedSections : [];
 		merged.playlistData = Array.isArray(merged.playlistData) ? merged.playlistData : [];
 		merged.history = merged.history && typeof merged.history === "object" ? { ...merged.history } : {};
@@ -163,18 +169,18 @@ export default class ZenZonePlugin extends Plugin {
 		}
 	}
 
-	/** Totals for today, and for the last seven days including today. */
-	focusStats(): { today: DayStats; week: DayStats } {
-		const keys = Object.keys(this.settings.history).sort();
-		const todayKey = now().format("YYYY-MM-DD");
-		const weekStart = formatClock(Date.now() - 6 * 86_400_000, "YYYY-MM-DD");
-		const week: DayStats = { sessions: 0, minutes: 0 };
-		for (const key of keys) {
-			if (key < weekStart || key > todayKey) continue;
-			week.sessions += this.settings.history[key].sessions;
-			week.minutes += this.settings.history[key].minutes;
-		}
-		return { today: this.settings.history[todayKey] ?? { sessions: 0, minutes: 0 }, week };
+	/** Focus totals for each of the last seven days, oldest first and ending with today. */
+	focusStats(): { today: DayStats; week: DayStats; days: Array<DayStats & { label: string }> } {
+		const days = Array.from({ length: 7 }, (_, i) => {
+			const start = startOfDay(6 - i);
+			const stats = this.settings.history[formatClock(start, "YYYY-MM-DD")] ?? { sessions: 0, minutes: 0 };
+			return { ...stats, label: formatClock(start, "dd") };
+		});
+		const week = days.reduce<DayStats>(
+			(sum, day) => ({ sessions: sum.sessions + day.sessions, minutes: sum.minutes + day.minutes }),
+			{ sessions: 0, minutes: 0 }
+		);
+		return { today: days[days.length - 1], week, days };
 	}
 
 	/** Books a finished focus phase: history, the current task's tally, and the daily note. */
@@ -212,14 +218,48 @@ export default class ZenZonePlugin extends Plugin {
 
 	// --- Status bar and notifications ------------------------------------
 
+	/** Shows the countdown, followed by the task it counts towards. Empty text hides the item. */
 	updateStatusBar(text: string): void {
 		if (!this.statusBarItem) return;
-		if (this.settings.showStatusBarTimer && text) {
-			this.statusBarItem.setText(text);
-			this.statusBarItem.show();
-		} else {
+		if (!this.settings.showStatusBarTimer || !text) {
 			this.statusBarItem.hide();
+			return;
 		}
+		const task = this.settings.tasks[0]?.content ?? "";
+		const shown = task.length > STATUS_TASK_LENGTH ? `${task.slice(0, STATUS_TASK_LENGTH - 1)}…` : task;
+		this.statusBarItem.setText(shown ? `${text} · ${shown}` : text);
+		this.statusBarItem.show();
+	}
+
+	/** The session and the music, one click away without opening the panel. */
+	private showStatusBarMenu(event: MouseEvent): void {
+		const { session, audio } = this;
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item
+				.setTitle(t(session.running ? "timer.pause" : session.active ? "timer.resume" : "timer.start"))
+				.setIcon(session.running ? "pause" : "play")
+				.onClick(() => session.toggle())
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle(t("timer.skip"))
+				.setIcon("skip-forward")
+				.setDisabled(!session.active)
+				.onClick(() => session.skip())
+		);
+		menu.addItem((item) => item.setTitle(t("command.reset")).setIcon("rotate-ccw").onClick(() => session.reset()));
+		menu.addSeparator();
+		menu.addItem((item) =>
+			item
+				.setTitle(t("command.music"))
+				.setIcon(audio.playing ? "pause" : "music")
+				.onClick(() => audio.toggle())
+		);
+		menu.addItem((item) => item.setTitle(t("command.next")).setIcon("skip-forward").onClick(() => audio.next()));
+		menu.addSeparator();
+		menu.addItem((item) => item.setTitle(t("command.open")).setIcon("zap").onClick(() => void this.activateView()));
+		menu.showAtMouseEvent(event);
 	}
 
 	/**

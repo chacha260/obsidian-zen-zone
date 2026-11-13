@@ -89,8 +89,25 @@ export class TimerCard {
 		}
 	}
 
-	setStats(text: string): void {
-		this.statsEl?.setText(text);
+	/**
+	 * Shows the totals and a bar per day, oldest first and ending with today.
+	 * Each bar's height is its share of the busiest day.
+	 */
+	setStats(summary: string, days: Array<{ label: string; minutes: number; tooltip: string }>): void {
+		const stats = this.statsEl;
+		if (!stats) return;
+		stats.empty();
+		stats.createDiv({ text: summary, cls: "zen-timer-summary" });
+
+		const busiest = Math.max(...days.map((day) => day.minutes), 1);
+		const chart = stats.createDiv({ cls: "zen-chart" });
+		days.forEach((day, index) => {
+			const column = chart.createDiv({ cls: "zen-chart-day", attr: { "aria-label": day.tooltip } });
+			column.toggleClass("is-today", index === days.length - 1);
+			const bar = column.createDiv({ cls: "zen-chart-track" }).createDiv({ cls: "zen-chart-bar" });
+			bar.style.setProperty("--zen-bar", (day.minutes / busiest).toFixed(3));
+			column.createDiv({ text: day.label, cls: "zen-chart-label" });
+		});
 	}
 
 	/** `resumable` distinguishes a paused session from a fresh one. */

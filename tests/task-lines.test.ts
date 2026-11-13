@@ -5,6 +5,7 @@ import {
 	appendUnderHeading,
 	completeTaskLine,
 	deleteTaskLine,
+	forwardTaskLine,
 	listOpenTasks,
 	renameTaskLine,
 	reopenTaskLine
@@ -110,4 +111,12 @@ void test("rename: rewrites the exact open task in place", () => {
 	const note = "## Todo\n- [ ] send mail\n  - [ ] mail\n";
 	assert.equal(renameTaskLine(note, "mail", "post $1").content, "## Todo\n- [ ] send mail\n  - [ ] post $1\n");
 	assert.equal(renameTaskLine(note, "missing", "x").changed, false);
+});
+
+void test("forward: marks the exact open task as moved on", () => {
+	const note = "## Todo\n- [ ] send mail\n- [ ] mail\n- [x] 09:00 done\n";
+	assert.equal(forwardTaskLine(note, "mail").content, "## Todo\n- [ ] send mail\n- [>] mail\n- [x] 09:00 done\n");
+	assert.equal(forwardTaskLine(note, "done").changed, false);
+	// A forwarded task is no longer open, so it is not picked up again.
+	assert.deepEqual(listOpenTasks(forwardTaskLine(note, "mail").content, "Todo"), ["send mail"]);
 });

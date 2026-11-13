@@ -6,6 +6,7 @@ import {
 	appendUnderHeading,
 	completeTaskLine,
 	deleteTaskLine,
+	forwardTaskLine,
 	listOpenTasks,
 	renameTaskLine,
 	reopenTaskLine
@@ -84,6 +85,25 @@ export class DailyNoteService {
 		});
 	}
 
+	/**
+	 * Moves a task from an earlier daily note into today's: the old line is
+	 * marked as forwarded, so that note still shows it was planned there, and
+	 * a fresh checkbox is added today. Returns today's path on success.
+	 */
+	async carryOver(taskContent: string, customHeader: string | undefined, fromPath: string | undefined): Promise<string | null> {
+		if (!this.settings.autoLogToDaily) return null;
+		const todayPath = this.todayPath();
+		const today = await this.openNote(todayPath, true);
+		if (!today) return null;
+
+		const previous = fromPath && fromPath !== todayPath ? await this.openNote(fromPath, false) : null;
+		if (previous) await this.edit(previous, (content) => forwardTaskLine(content, taskContent).content);
+
+		const header = customHeader || this.defaultHeader;
+		await this.edit(today, (content) => addTaskLine(content, taskContent, header).content);
+		return todayPath;
+	}
+
 	/** Follows a renamed task into the daily note it was filed in. */
 	async renameTask(oldContent: string, newContent: string, specificFilePath?: string): Promise<void> {
 		if (!this.settings.autoLogToDaily || oldContent === newContent) return;
@@ -117,10 +137,7 @@ export class DailyNoteService {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file instanceof TFile) return file;
 		if (file) return null;
-		if (!createIfMissing) {
-			console.warn(`Zen Zone: daily note not found: ${path}`);
-			return null;
-		}
+		if (!createIfMissing) return null;
 		return this.createDailyNote(path);
 	}
 

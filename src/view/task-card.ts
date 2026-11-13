@@ -2,7 +2,8 @@ import { Notice, setIcon } from "obsidian";
 import type ZenZonePlugin from "../main";
 import { DomListenerRegistry, TimeoutRegistry } from "../dom";
 import { t } from "../i18n";
-import { ZenTask } from "../types";
+import { formatClock, startOfDay } from "../moment";
+import { DoneTask, ZenTask } from "../types";
 import { taskTally } from "../utils";
 
 /** How long the checkbox stays ticked before the task disappears. */
@@ -41,6 +42,8 @@ export class TaskCard {
 	private dragSrcIndex = -1;
 	/** Id of the task whose row is showing its edit fields, if any. */
 	private editingId: string | null = null;
+	/** Whether the "done today" list is unfolded; kept across re-renders. */
+	private doneOpen = false;
 
 	constructor(
 		private readonly el: HTMLElement,
@@ -54,9 +57,11 @@ export class TaskCard {
 	render(): void {
 		this.el.empty();
 		this.attachRowDelegates(this.el);
+		this.renderCarryOver();
 		this.renderFocus();
 		this.renderInput();
 		this.renderList();
+		this.renderDone();
 	}
 
 	refresh(): void {
@@ -74,6 +79,38 @@ export class TaskCard {
 	destroy(): void {
 		this.listeners.clear();
 		this.timeouts.clearAll();
+	}
+
+	// --- Carry-over ------------------------------------------------------
+
+	/** Tasks still filed in an earlier day's note. Without daily note logging there is nothing to move. */
+	private staleTasks(): ZenTask[] {
+		if (!this.plugin.settings.autoLogToDaily) return [];
+		const today = this.plugin.dailyNotes.todayPath();
+		return this.tasks.filter((task) => task.filePath && task.filePath !== today);
+	}
+
+	private renderCarryOver(): void {
+		const stale = this.staleTasks();
+		if (stale.length === 0) return;
+
+		const banner = this.el.createDiv({ cls: "zen-task-banner" });
+		banner.createSpan({ text: t("task.carryOver", { count: stale.length }) });
+		const button = banner.createEl("button", { text: t("task.carryOverAction") });
+		this.listeners.add(button, "click", () => void this.carryOver(stale));
+	}
+
+	private async carryOver(stale: ZenTask[]): Promise<void> {
+		let moved = 0;
+		for (const task of stale) {
+			const path = await this.plugin.dailyNotes.carryOver(task.content, task.header, task.filePath);
+			if (!path) continue;
+			task.filePath = path;
+			moved++;
+		}
+		await this.plugin.saveSettings();
+		this.forceRefresh();
+		new Notice(t("task.carriedOver", { count: moved }));
 	}
 
 	// --- Current focus ---------------------------------------------------
@@ -201,9 +238,51 @@ export class TaskCard {
 		});
 	}
 
+	// --- Done today ------------------------------------------------------
+
+	/** Today's completions, dropping anything left over from before midnight. */
+	private doneToday(): DoneTask[] {
+		const settings = this.plugin.settings;
+		const today = startOfDay();
+		if (settings.doneTasks.some((done) => done.at < today)) {
+			settings.doneTasks = settings.doneTasks.filter((done) => done.at >= today);
+		}
+		return settings.doneTasks;
+	}
+
+	private renderDone(): void {
+		const done = this.doneToday();
+		if (done.length === 0) return;
+
+		const details = this.el.createEl("details", { cls: "zen-task-done" });
+		details.open = this.doneOpen;
+		this.listeners.add(details, "toggle", () => (this.doneOpen = details.open));
+		details.createEl("summary", { text: t("task.doneToday", { count: done.length }) });
+
+		const list = details.createDiv({ cls: "zen-task-done-list" });
+		// Newest first: what was just finished is what gets reopened.
+		for (let index = done.length - 1; index >= 0; index--) {
+			const { task, at } = done[index];
+			const row = list.createDiv({ cls: "zen-task-done-row" });
+			row.createSpan({ text: formatClock(at, "HH:mm"), cls: "zen-task-done-time" });
+			row.createSpan({ text: task.content, cls: "zen-task-done-text" });
+			this.renderTally(row, task);
+			const reopen = row.createEl("button", { cls: "zen-task-control-btn", attr: { "aria-label": t("task.reopen") } });
+			setIcon(reopen, "undo-2");
+			reopen.dataset.doneIndex = index.toString();
+		}
+	}
+
 	/** A fixed handful of listeners for every task row, however many there are. */
 	private attachRowDelegates(listWrapper: HTMLElement): void {
 		this.listeners.add(listWrapper, "click", (event) => {
+			const reopen = (event.target as HTMLElement).closest<HTMLElement>("[data-done-index]");
+			if (reopen) {
+				const done = this.plugin.settings.doneTasks[parseInt(reopen.dataset.doneIndex ?? "", 10)];
+				if (done) void this.undo({ task: done.task, index: this.tasks.length, kind: "complete" });
+				return;
+			}
+
 			const control = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
 			if (!control) return;
 			const row = control.closest<HTMLElement>(".zen-task-row");
@@ -420,6 +499,7 @@ export class TaskCard {
 		if (index < 0) return;
 		await this.plugin.dailyNotes.manageTask(task.content, task.header, "complete", task.filePath, taskTally(task));
 		this.tasks.splice(index, 1);
+		this.doneToday().push({ task, at: Date.now() });
 		await this.plugin.saveSettings();
 		this.forceRefresh();
 		this.offerUndo({ task, index, kind: "complete" });
@@ -446,6 +526,10 @@ export class TaskCard {
 	private async undo({ task, index, kind }: UndoableRemoval): Promise<void> {
 		if (this.tasks.includes(task)) return;
 		this.tasks.splice(Math.min(index, this.tasks.length), 0, task);
+		if (kind === "complete") {
+			const settings = this.plugin.settings;
+			settings.doneTasks = settings.doneTasks.filter((done) => done.task !== task);
+		}
 		await this.plugin.dailyNotes.manageTask(
 			task.content,
 			task.header,

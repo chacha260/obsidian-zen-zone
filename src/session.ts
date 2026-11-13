@@ -406,6 +406,8 @@ export class FocusSession {
 	private emitTime(): void {
 		const seconds = this.remainingSeconds;
 		this.listener?.onTick(seconds);
-		this.plugin.updateStatusBar(this.runningValue ? `${PHASE_ICON[this.phaseValue]} ${formatTime(seconds)}` : "");
+		// Stays up while paused, so the menu behind it can resume the session.
+		const icon = this.running ? PHASE_ICON[this.phaseValue] : "⏸";
+		this.plugin.updateStatusBar(this.active || this.running ? `${icon} ${formatTime(seconds)}` : "");
 	}
 }

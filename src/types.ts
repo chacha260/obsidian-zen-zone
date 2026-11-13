@@ -34,6 +34,13 @@ export interface ZenTask {
 	estimate?: number;
 }
 
+/** A task that was ticked off, kept so the day's work stays visible and can be reopened. */
+export interface DoneTask {
+	task: ZenTask;
+	/** When it was completed, in epoch milliseconds. */
+	at: number;
+}
+
 /** What one day of focus added up to. */
 export interface DayStats {
 	sessions: number;
@@ -108,6 +115,8 @@ export interface ZenZoneSettings {
 	shuffle: boolean;
 	repeatMode: RepeatMode;
 	tasks: ZenTask[];
+	/** Tasks completed today, newest last. Older days are dropped on load. */
+	doneTasks: DoneTask[];
 	/** Panel sections the user has folded away. */
 	collapsedSections: string[];
 	/** Focus totals per day, keyed by `YYYY-MM-DD`. */
